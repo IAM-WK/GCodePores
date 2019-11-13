@@ -11,8 +11,17 @@ Arburg Freeformer
 
 ## Getting Started
 
+### Preprocessing µCT Images
+
 tbd
 
+### Analysing Data with GCodePores
+
+tbd
+
+### Troubleshooting
+
+---
 
 ### Dependencies 
 
