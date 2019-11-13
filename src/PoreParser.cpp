@@ -1,6 +1,6 @@
 #include "PoreParser.h"
 
-#include <iostream>
+
 
 PoreParser::PoreParser()
 {

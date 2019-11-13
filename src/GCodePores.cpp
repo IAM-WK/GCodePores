@@ -1,15 +1,34 @@
+/************************************************************************************
+*************************************************************************************
+ *  GCodePores
+ *  analyse µCT porosity data in AM samples with respect to toolpath data
+ *
+ *  Copyright 2019 Lukas Englert
+ *
+ *
+ *  Institute of Materials Science and Engineering, <http://www.iam.kit.edu/wk/english/index.php>
+ *  Karlsruhe Institute of Technology
+ *
+ *  If you intend to use this work for your scientific publication  please cite the
+ *  appropriate publications listed on
+ *  <https://github.com/LukasEnglert/GCodePores>
+ *
+ *************************************************************************************
+ *************************************************************************************/
+
+#include <limits>
+#include <future>
+#include <omp.h>
+
+// own classes and functions
 #include "GCodeParser.h"
 #include "GCodeTransform.h"
 #include "GCodeInterpolation.h"
 #include "GCodeAnalysis.h"
 #include "helperfunctions.h"
 #include "PoreParser.h"
+#include "mhdParser.h"
 #include "TimeMeasurement.h"
-
-#include <limits>
-#include <future>
-
-#include <omp.h>
 
 // boost libs
 #include <boost/program_options.hpp>
@@ -19,11 +38,15 @@ namespace po = boost::program_options;
 int main(int argc, char *argv[])
 {
 	std::ios_base::sync_with_stdio(false);// said to improve IO perf...
-	// input: GCodeFile, Imagefile, PoreList, OutputFileName, Translation, Rotation, interpolation distance, Zahl next neighbors
+
+	//***********************************************************************
+	// INPUT 
+	//***********************************************************************
+
 	std::string GCodeFilename, PoreFilename, ImageFilename, OutputFilename, imagetranslationstring, startstring, endstring, vtkfilename;
 	float interpolationdist, anglealpha, anglebeta, anglegamma, classwidth, sphericitythreshold, aspectratiothreshold, pathlengthclasswidth;
 	std::vector<float> imagetranslation, imageangles;
-	unsigned int k, layersconsidered, volumethreshold;
+	unsigned int nextneighbours, layersconsidered, volumethreshold;
 	bool vtkfileonly = false, interpolationoff = false, vtkoutputoff = false, freeformcompat = false, slmcompat = false;
 	std::size_t skirtoffset;
 
@@ -39,7 +62,7 @@ int main(int argc, char *argv[])
 			("imagetranslation,u", po::value< std::string >(&imagetranslationstring)->required(), "Vector to translate GCode to fit in CT image (as string): \"x y z\" [mm]")
 			("imagerotation,a", po::value< std::vector<float> >(&imageangles)->multitoken()->required(), "angle about z-axis between object in GCode and in CT-image [optional: provide angle about y- and x-axis; order: z y x] \nCAUTION: Object should still be approximately in the z-plane!")
 			("interpolationdistance,d", po::value<float>(&interpolationdist), "specify interpolation distance, not required if --interpolationoff is specified")
-			("neighbours,k", po::value<unsigned int>(&k)->required(), "specify number of next neighbours to be considered")
+			("neighbours,k", po::value<unsigned int>(&nextneighbours)->required(), "specify number of next neighbours to be considered")
 			;
 		po::options_description optional("optional");
 		optional.add_options()
@@ -134,91 +157,49 @@ int main(int argc, char *argv[])
 	// store command line arguments for documentation
 	std::vector<std::string> argList(argv + 1, argv + argc);
 
+	//***********************************************************************
 	// END OF INPUT 
-	//*********************************************************************************************************************************************
-	//*********************************************************************************************************************************************
+	//***********************************************************************
+
+
 	//*************** read GCode and generate object ************************
 	double wall_start = get_wall_time();
-	GCodeParser Parser;
-	Parser.setFilename(GCodeFilename);
-	Parser.setSkirtoffset(skirtoffset);
-	Parser.setBoundarystrings(startstring, endstring);
-	Parser.setCompatibility(freeformcompat, slmcompat);
-	Parser.Execute();// read GCode, catch read error 
+	GCodeParser PathParser;
+	PathParser.setFilename(GCodeFilename);
+	PathParser.setSkirtoffset(skirtoffset);
+	PathParser.setBoundarystrings(startstring, endstring);
+	PathParser.setCompatibility(freeformcompat, slmcompat);
+	PathParser.Execute();// read GCode, catch read error 
 	double wall_parser = get_wall_time();
-	std::cout << "(parser) Wall Time  = " << std::to_string(wall_parser - wall_start) << "\n";
-	//***********************************************************************
+	std::cout << "GCodeParser finished! Time needed = " << std::to_string(wall_parser - wall_start) << "\n";
+	//************************* end read GCode *******************************
+
+
 
 	//*************** parse .mhd file for dimensions ************************
 	// image dimensions are needed to transform GCode coordinates to image coordinate system
-	// itk library can read dimensions easily, but this doesn't introduce dependecies
-	std::ifstream ImageFile;
-	ImageFile.open(ImageFilename);
-	std::string line_string;
-	const std::string dimsize = "DimSize", pixsize = "ElementSize";
-	size_t pixsizeposx = std::string::npos, pixsizeposy = std::string::npos, pixsizeposz = std::string::npos, sizeposx = std::string::npos, sizeposy = std::string::npos, sizeposz = std::string::npos;
-	size_t endpixposx = std::string::npos, endpixposy = std::string::npos, endpixposz = std::string::npos, endsizeposx = std::string::npos, endsizeposy = std::string::npos, endsizeposz = std::string::npos;
-	const std::string coordchars = "0123456789.+-"; //allowed characters in a coordinate specification // +- for robustness
+	mhdParser ImageParser;
+	ImageParser.setFilename(ImageFilename);
+	ImageParser.Execute();
+	//********************* end mhd parser **********************************
 
 
-	std::array<float, 3> pixelwidth;
-	std::array<float, 3> imagedimension; imagedimension.fill(0);
 
-	while (getline(ImageFile, line_string))
-	{
-		// dimension
-		if (line_string.substr(0, dimsize.length()) == dimsize ){
-			sizeposx = line_string.find("= "); // x is first after "="
-			endsizeposx = line_string.substr(sizeposx + 2, line_string.length() ).find_first_not_of(coordchars); //length of coord
-			imagedimension[0] = stof(line_string.substr(sizeposx + 1, endsizeposx+1));
-
-			sizeposy = line_string.find(" ", sizeposx + endsizeposx); // y after next space
-			endsizeposy = line_string.substr(sizeposy + 2, line_string.length()).find_first_not_of(coordchars); //length of coord
-			imagedimension[1] = stof(line_string.substr(sizeposy + 1, endsizeposy+1));
-
-			sizeposz = line_string.find(" ", sizeposy + endsizeposy); // z after next space
-			endsizeposz = line_string.substr(sizeposz + 2, line_string.length()).find_first_not_of(coordchars); //length of coord
-			imagedimension[2] = stof(line_string.substr(sizeposz + 1, endsizeposz));
-
-		}
-		// pixel size
-		if (line_string.substr(0, pixsize.length()) == pixsize ){
-			pixsizeposx = line_string.find("= "); // x is first after "="
-			endpixposx = line_string.substr(pixsizeposx + 2, line_string.length()).find_first_not_of(coordchars); //length of coord
-			pixelwidth[0] = stof(line_string.substr(pixsizeposx + 1, endpixposx+1));
-
-			pixsizeposy = line_string.find(" ", pixsizeposx + endpixposx); // y after next space
-			endpixposy = line_string.substr(pixsizeposy + 2, line_string.length()).find_first_not_of(coordchars); //length of coord
-			pixelwidth[1] = stof(line_string.substr(pixsizeposy + 1, endpixposy+1));
-
-			pixsizeposz = line_string.find(" ", pixsizeposy + endpixposy); // z after next space
-			endpixposz = line_string.substr(pixsizeposz + 2, line_string.length()).find_first_not_of(coordchars); //length of coord
-			pixelwidth[2] = stof(line_string.substr(pixsizeposz + 1, endpixposz));
-		}
-	
-	}
-	const float image_length_x = (imagedimension[0])*pixelwidth[0];
-	const float image_length_y = (imagedimension[1])*pixelwidth[1];
-	const float image_length_z = (imagedimension[2])*pixelwidth[2];
-
-	/*std::cout << image_length_x << std::endl;
-	std::cout << image_length_y << std::endl;
-	std::cout << image_length_z << std::endl;*/
-
-	// end ugly mhd parser
-	//***********************************************************************
-
-	//*********** align GCode to Image***************************************
+	//********************** align GCode to Image ***************************
 	GCodeTransform GCodeTransformer;
 	GCodeTransformer.setOrigin(imagetranslation);
 	GCodeTransformer.setAngles(anglegamma, anglebeta, anglealpha);
-	GCodeTransformer.setImagedimensions(image_length_y, image_length_z);
-	GCodeTransformer.setInput(Parser.GetOutput());
+	GCodeTransformer.setImagedimensions(ImageParser.imagedimensionmm[1], ImageParser.imagedimensionmm[2]);
+	GCodeTransformer.setInput(PathParser.GetOutput());
 	GCodeTransformer.Execute(); // start of printing in image; {X,Y,Z}, Phi (radians), length of image in y' direction, z' direction; 5.32f,8.10f,3.0f, 2.73
 								// select GCode representation
 	double wall_transform = get_wall_time();
-	std::cout << "(transform) Wall Time  = " << std::to_string(wall_transform - wall_parser) << "\n";
-	//*********** interpolate GCode *****************************************
+	std::cout << "Path coordinate transformation finished! Time needed = " << std::to_string(wall_transform - wall_parser) << "\n";
+	//********************* end coordinate transformation *******************
+
+
+
+	//************************* interpolate GCode ***************************
 	GCodeInterpolation GCodeInterpolator;
 	GCodeInterpolator.setDistance(interpolationdist);
 	GCodeInterpolator.setInput(GCodeTransformer.GetOutput());
@@ -231,19 +212,26 @@ int main(int argc, char *argv[])
 		pathVec = GCodeTransformer.GetOutput();
 	}
 	double wall_interpol = get_wall_time();
-	std::cout << "(interpolation) Wall Time  = " << std::to_string(wall_interpol - wall_transform) << "\n";
+	std::cout << "Path interpolation finished! Time needed = " << std::to_string(wall_interpol - wall_transform) << "\n";
+	//************************* end interpolate GCode ***********************
+
+
+
+
+	//************************* analyse GCode *********************************
 	//****************** write VTK file for PARAVIEW **************************
 	if (!(vtkfilename.substr(vtkfilename.length() - 4, vtkfilename.length()) == ".vtk")) {
 		vtkfilename = vtkfilename + ".vtk";
 	}
-	//PathBase::outputvtkfile(pathVec, vtkfilename, argList);
+
 	std::vector<float> deltaangles_gcode, deltaangles_filtered, curvatures, feedrate, chunklength, lengthofchunks;
 	std::vector<int> pathclassification, pathclassificationwithchunks;
+
 	GCodeAnalysis GCodeAnalyser;
 	GCodeAnalyser.setvtkfilename(vtkfilename);
 	//GCodeAnalyser.calcdeltaangle(pathVec, true, true, 0.4f); // calc angles at points and create vtk colorfield, degree, filter, filterlength
 	float extr_width = 0.f, l_hgt = 0.f;
-	Parser.getGCodeparams(extr_width, l_hgt);
+	PathParser.getGCodeparams(extr_width, l_hgt);
 	if (slmcompat) { extr_width = 0.125f; } //todo: estimate from GCode
 	else if (arefloatsequal(extr_width, 0.f)) { extr_width = 0.45f; };
 	GCodeAnalyser.classifypoints(pathVec, 0.5f*extr_width); // maybe a bit too conservative to use width as tolerance...
@@ -252,9 +240,6 @@ int main(int argc, char *argv[])
 	GCodeAnalyser.calcpathlength(pathVec);
 	GCodeAnalyser.getfieldvecs(deltaangles_gcode, deltaangles_filtered, curvatures, pathclassification, pathclassificationwithchunks, chunklength, lengthofchunks);
 	
-	//PathBase::outputcontourvtkfile(pathclassification, vtkfilename, "pathclassification");
-
-	//PathBase::outputcontourvtkfile(chunklength, vtkfilename, "pathlengths");
 	std::cout << "successfully finished analysing GCode! \nstarting to write data... \n";
 
 	// print normed coords -- just for debugging
@@ -265,19 +250,26 @@ int main(int argc, char *argv[])
 	//	}
 	//}
 
+	//** data writing consumes much time, so writing will be done asynchronous to the rest of the work **
+	// async launches the worker which writes the fields to the vtk file
 	std::future<void> writework;
 	if (!vtkoutputoff) {
 		writework = std::async(std::launch::async, PathBase::writerWorker, pathVec, vtkfilename, argList, pathclassification, chunklength);
 	}
 	if (vtkfileonly) {
-		//pathlen.get();
 		if (!vtkoutputoff) {
 			writework.get();// this makes sure, writer finishes before exit
 		}
 		return EXIT_SUCCESS; // do not process further
 	}
-	//***********************************************************************
-	//********************************************************************************************************************************************
+	//************************* end analyse GCode ****************************
+
+	//*****************************************************************************************************************************
+	// end of gcode preprocessing, start of pore file preprocessing
+	//*****************************************************************************************************************************
+
+
+	//************************* parse pore file from MLJ *********************
 	// Parse morpholibj file	
 
 	PoreParser poreparser;
@@ -291,14 +283,14 @@ int main(int argc, char *argv[])
 	unsigned int volumecol = poreparser.volumecol, Xcol = poreparser.Xcol, Ycol = poreparser.Ycol, Zcol = poreparser.Zcol, azimuthcol = poreparser.azimuthcol;
 	//  sphericitycol = poreparser.sphericitycol, 
 
-	std::cout << "volume of all pores = " << poreparser.porevolume << " voxels; => " << (poreparser.porevolume*pixelwidth[0] * pixelwidth[1] * pixelwidth[2]) << "mm^3 \n";
-	std::cout << "volume of considered pores = " << poreparser.filteredporesvolume << " voxels; => " << (poreparser.filteredporesvolume*pixelwidth[0] * pixelwidth[1] * pixelwidth[2]) << "mm^3 \n";
+	std::cout << "volume of all pores = " << poreparser.porevolume << " voxels; => " << (poreparser.porevolume*ImageParser.pixelwidth[0] * ImageParser.pixelwidth[1] * ImageParser.pixelwidth[2]) << "mm^3 \n";
+	std::cout << "volume of considered pores = " << poreparser.filteredporesvolume << " voxels; => " << (poreparser.filteredporesvolume* ImageParser.pixelwidth[0] * ImageParser.pixelwidth[1] * ImageParser.pixelwidth[2]) << "mm^3 \n";
 	std::cout << "this corresponds to a fraction of " << (std::roundf(static_cast<float>(poreparser.filteredporesvolume) / static_cast<float>(poreparser.porevolume) * 1000)/10) << "% \n";
 	std::cout << "fraction of pores (by number) that were classified as non gas pores: " << (std::roundf(static_cast<float>(poreparser.khpores) / static_cast<float>(poreparser.khpores+poreparser.gaspores) * 1000) / 10) << "% \n";
 	// save this informations to a vec to output it to the csv file
 	std::vector<std::string> poreinformations;
-	poreinformations.push_back("volume of all pores = " + std::to_string(poreparser.porevolume) + " voxels; => " + std::to_string(poreparser.porevolume*pixelwidth[0] * pixelwidth[1] * pixelwidth[2]) + "mm^3 ");
-	poreinformations.push_back("volume of considered pores = " + std::to_string(poreparser.filteredporesvolume) + " voxels; => " + std::to_string(poreparser.filteredporesvolume*pixelwidth[0] * pixelwidth[1] * pixelwidth[2]) + "mm^3 ");
+	poreinformations.push_back("volume of all pores = " + std::to_string(poreparser.porevolume) + " voxels; => " + std::to_string(poreparser.porevolume* ImageParser.pixelwidth[0] * ImageParser.pixelwidth[1] * ImageParser.pixelwidth[2]) + "mm^3 ");
+	poreinformations.push_back("volume of considered pores = " + std::to_string(poreparser.filteredporesvolume) + " voxels; => " + std::to_string(poreparser.filteredporesvolume* ImageParser.pixelwidth[0] * ImageParser.pixelwidth[1] * ImageParser.pixelwidth[2]) + "mm^3 ");
 	poreinformations.push_back("this corresponds to a fraction of " + std::to_string(std::roundf(static_cast<float>(poreparser.filteredporesvolume) / static_cast<float>(poreparser.porevolume) * 1000) / 10) + "% ");
 	poreinformations.push_back("fraction of pores (by number) that were classified as non gas pores: " + std::to_string(std::roundf(static_cast<float>(poreparser.khpores) / static_cast<float>(poreparser.khpores + poreparser.gaspores) * 1000) / 10) + "% ");
 
@@ -308,9 +300,9 @@ int main(int argc, char *argv[])
 	// entry 5,6,7 is center x,y,z // 8,9,10 is rad1,2,3 // 
 	// post process pore coords: pixels to mm
 	for (unsigned int porenum = 0; porenum < porevec.size(); ++porenum) {
-		porevec[porenum][Xcol] = porevec[porenum][Xcol] * pixelwidth[0];
-		porevec[porenum][Ycol] = porevec[porenum][Ycol] * pixelwidth[1];
-		porevec[porenum][Zcol] = porevec[porenum][Zcol] * pixelwidth[2];
+		porevec[porenum][Xcol] = porevec[porenum][Xcol] * ImageParser.pixelwidth[0];
+		porevec[porenum][Ycol] = porevec[porenum][Ycol] * ImageParser.pixelwidth[1];
+		porevec[porenum][Zcol] = porevec[porenum][Zcol] * ImageParser.pixelwidth[2];
 	}
 	//********************************************************************************************************************************************
 
@@ -531,13 +523,13 @@ int main(int argc, char *argv[])
 		// calculate average direction of GCode in pore neighbourhood
 		// to do: weight direction with distance
 		std::array<float, 3 > neighbour_direction; neighbour_direction.fill(0);
-		for (unsigned int neighbour_index = 0; neighbour_index < k; ++neighbour_index) {
+		for (unsigned int neighbour_index = 0; neighbour_index < nextneighbours; ++neighbour_index) {
 			for (int h = 0; h < 3; ++h) {
 				neighbour_direction[h] = neighbour_direction[h] + neighbourhood[neighbour_index][h+3];
 			}
 		}
 		for (int h = 0; h < 3; ++h) {
-			neighbour_direction[h] = neighbour_direction[h] / static_cast<float>(k);
+			neighbour_direction[h] = neighbour_direction[h] / static_cast<float>(nextneighbours);
 		}
 
 		// convert GCode direction to azimuth/elevation system
@@ -669,7 +661,7 @@ int main(int argc, char *argv[])
 	
 	// normal for loop...
 	for (unsigned int index = 0; index < histogram_vol_in_mm_angle.size(); ++index) {
-		histogram_vol_in_mm_angle[index] = histogram_vol_in_angle[index] * pixelwidth[0] * pixelwidth[1] * pixelwidth[2];
+		histogram_vol_in_mm_angle[index] = histogram_vol_in_angle[index] * ImageParser.pixelwidth[0] * ImageParser.pixelwidth[1] * ImageParser.pixelwidth[2];
 	}
 
 	/*
