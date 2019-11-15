@@ -270,7 +270,6 @@ int main(int argc, char *argv[])
 
 
 	//************************* parse pore file from MLJ *********************
-	// Parse morpholibj file	
 
 	PoreParser poreparser;
 	poreparser.setFilename(PoreFilename);
@@ -281,8 +280,11 @@ int main(int argc, char *argv[])
 	poreparser.Execute();
 	// get columns of needed values
 	unsigned int volumecol = poreparser.volumecol, Xcol = poreparser.Xcol, Ycol = poreparser.Ycol, Zcol = poreparser.Zcol, azimuthcol = poreparser.azimuthcol;
-	//  sphericitycol = poreparser.sphericitycol, 
+	//  sphericitycol = poreparser.sphericitycol, TODO
+	//************************* end parse pore file  ************************
 
+
+	//*************** output processed information from MLJ *****************
 	std::cout << "volume of all pores = " << poreparser.porevolume << " voxels; => " << (poreparser.porevolume*ImageParser.pixelwidth[0] * ImageParser.pixelwidth[1] * ImageParser.pixelwidth[2]) << "mm^3 \n";
 	std::cout << "volume of considered pores = " << poreparser.filteredporesvolume << " voxels; => " << (poreparser.filteredporesvolume* ImageParser.pixelwidth[0] * ImageParser.pixelwidth[1] * ImageParser.pixelwidth[2]) << "mm^3 \n";
 	std::cout << "this corresponds to a fraction of " << (std::roundf(static_cast<float>(poreparser.filteredporesvolume) / static_cast<float>(poreparser.porevolume) * 1000)/10) << "% \n";
@@ -293,7 +295,7 @@ int main(int argc, char *argv[])
 	poreinformations.push_back("volume of considered pores = " + std::to_string(poreparser.filteredporesvolume) + " voxels; => " + std::to_string(poreparser.filteredporesvolume* ImageParser.pixelwidth[0] * ImageParser.pixelwidth[1] * ImageParser.pixelwidth[2]) + "mm^3 ");
 	poreinformations.push_back("this corresponds to a fraction of " + std::to_string(std::roundf(static_cast<float>(poreparser.filteredporesvolume) / static_cast<float>(poreparser.porevolume) * 1000) / 10) + "% ");
 	poreinformations.push_back("fraction of pores (by number) that were classified as non gas pores: " + std::to_string(std::roundf(static_cast<float>(poreparser.khpores) / static_cast<float>(poreparser.khpores + poreparser.gaspores) * 1000) / 10) + "% ");
-
+	//*************** end output processed information **********************
 
 	std::vector < std::array<float, 26>> porevec;
 	porevec = poreparser.GetOutput();
@@ -305,6 +307,9 @@ int main(int argc, char *argv[])
 		porevec[porenum][Zcol] = porevec[porenum][Zcol] * ImageParser.pixelwidth[2];
 	}
 	//********************************************************************************************************************************************
+
+
+
 
 	//********************************************************************************************************************************************
 	// start of some pre calculations 
