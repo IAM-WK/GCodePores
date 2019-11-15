@@ -38,9 +38,9 @@ private:
 
 	// vars to store settings
 	std::string GCodeFilename, startstring, endstring;
-	size_t skirtoffset;
-	bool freeformcompat;
-	bool slmcompat;
+	size_t skirtoffset = 0;
+	bool freeformcompat = false;
+	bool slmcompat = false;
 	bool startbystring = false;
 
 

@@ -13,10 +13,10 @@ class mhdParser
 public:
 	void setFilename(const std::string& Filename);
 	void Execute();
-	std::array<float, 3> imagedimensionmm;
-	std::array<float, 3> pixelwidth;
+	std::array<float, 3> imagedimensionmm = { -1.f,-1.f,-1.f };
+	std::array<float, 3> pixelwidth = { -1.f,-1.f,-1.f};
 
 private:
 	std::string mhdfilename;
-	std::array<float, 3> imagedimensionvoxels;
+	std::array<float, 3> imagedimensionvoxels = { -1.f,-1.f,-1.f };
 };

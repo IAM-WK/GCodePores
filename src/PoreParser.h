@@ -22,7 +22,7 @@ public:
 	void Execute();
 
 	std::vector< std::array< float, 26>> GetOutput() const;
-	unsigned int sphericitycol, volumecol, Xcol, Ycol, Zcol, azimuthcol, elevationcol,rad12col, rad13col;
+	unsigned int sphericitycol = 0, volumecol = 0, Xcol = 0, Ycol = 0, Zcol = 0, azimuthcol = 0, elevationcol = 0, rad12col = 0, rad13col = 0;
 	unsigned int porevolume = 0, filteredporesvolume = 0;
 
 	// histogram of pore orientation (uncorrelated with GCode)
@@ -55,7 +55,7 @@ private:
 
 	std::string porefilename;
 	// sphericity threshold to sort out pores above
-	float sphericitythres, aspectratiothres;
-	unsigned int volumethres;
+	float sphericitythres = -1.f, aspectratiothres = -1.f;
+	unsigned int volumethres = 0;
 
 };

@@ -34,9 +34,9 @@ private:
 	PathBase::PathVector GCodeVec;
 
 	// vars to store settings
-	float distance;
+	float distance = -1.f;
 
-	float carry_distance; // will store carry from last generated coord to next coord in PrintVector
+	float carry_distance = -1.f; // will store carry from last generated coord to next coord in PrintVector
 
 	// this function generates values interpolated with const distance in normalised vector
 	void interpolatepath(ChunkVector::const_iterator &CCoordIt, const PathVector::const_iterator &CChunkIt, const float &searchdistance);

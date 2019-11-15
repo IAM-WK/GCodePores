@@ -524,7 +524,7 @@ int main(int argc, char *argv[])
 		// to do: weight direction with distance
 		std::array<float, 3 > neighbour_direction; neighbour_direction.fill(0);
 		for (unsigned int neighbour_index = 0; neighbour_index < nextneighbours; ++neighbour_index) {
-			for (int h = 0; h < 3; ++h) {
+			for (size_t h = 0; h < 3; ++h) {
 				neighbour_direction[h] = neighbour_direction[h] + neighbourhood[neighbour_index][h+3];
 			}
 		}
