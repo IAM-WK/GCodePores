@@ -246,7 +246,35 @@ void GCodeAnalysis::calcpathlength(const PathBase::PathVector & PathVec)
 	//PathBase::outputcontourvtkfile(this->chunklengths, this->vtkfilename, "pathlengths");
 }
 
-void GCodeAnalysis::getfieldvecs(std::vector<flttype>& deltaanglesvec, std::vector<flttype>& deltaangles_filteredvec, std::vector<flttype>& curvaturesvec, std::vector<int>& pathclassificationvec, std::vector<int> &pathclassificationwithchunksvec, std::vector<flttype> &chunklengthsvec, std::vector<flttype> &lengthofchunksvec)
+void GCodeAnalysis::setlayerheighttol(const float &layer_height_tol_val)
+{
+	this->layer_height_tol = layer_height_tol_val;
+}
+
+void GCodeAnalysis::calclayerheights(const PathBase::PathVector& PathVec)
+{
+	float avg_lay_height;
+	for (auto& pathchunk : PathVec) {
+		avg_lay_height = 0;
+		for (std::size_t i = 0; i < pathchunk.size(); ++i) {
+			avg_lay_height += pathchunk[i][2];
+		}
+		avg_lay_height = avg_lay_height / pathchunk.size();
+		this->layer_height.push_back(avg_lay_height);
+	}
+	
+	// next we generate a vec with all unique heights
+	this->heights_avail.push_back(this->layer_height[0]); // first entry is unique per definition
+	for (unsigned int j = 1; j < this->layer_height.size(); ++j) {
+		// this requires the chunks to be in a sorted manner!
+		// tol is 1/1000 of layer dim
+		if (!arefloatsequal(this->layer_height[j], this->heights_avail.back(), this->layer_height_tol)) {
+			this->heights_avail.push_back(this->layer_height[j]);
+		}
+	}
+}
+
+void GCodeAnalysis::getfieldvecs(std::vector<flttype>& deltaanglesvec, std::vector<flttype>& deltaangles_filteredvec, std::vector<flttype>& curvaturesvec, std::vector<int>& pathclassificationvec, std::vector<int> &pathclassificationwithchunksvec, std::vector<flttype> &chunklengthsvec, std::vector<flttype> &lengthofchunksvec, std::vector<flttype> &layer_heightvec, std::vector<flttype> &heights_availvec)
 {
 	deltaanglesvec = this->deltaangles;
 	deltaangles_filteredvec = this->deltaangles_filtered;
@@ -255,7 +283,8 @@ void GCodeAnalysis::getfieldvecs(std::vector<flttype>& deltaanglesvec, std::vect
 	chunklengthsvec = this->chunklengths;
 	lengthofchunksvec = this->lengthofchunks;
 	pathclassificationwithchunksvec = this->pathclassificationwithchunks;
-
+	layer_heightvec = this->layer_height;
+	heights_availvec = this->heights_avail;
 }
 
 bool GCodeAnalysis::paircomparator(const std::pair<float, size_t> &l, const std::pair<float, size_t> &r)

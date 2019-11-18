@@ -26,3 +26,12 @@ float clamped_acos(const float & value)
 		return acos(value);
 	}
 }
+
+void progressbar(float &processed, float &oldprocessed, const size_t &progresscounter, const size_t &sizeporevec)
+{
+	oldprocessed = processed;
+	processed = std::roundf(static_cast<float>(progresscounter) / static_cast<float>(sizeporevec) * 100); // fertig in prozent (0.xy)
+	if (oldprocessed != processed) { // new percent values only
+		std::cout << "\rprocessed " << processed << "% of pores!";
+	}
+}

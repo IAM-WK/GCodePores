@@ -30,8 +30,11 @@ public:
 	// PathBase::PathVector GetOutput() const;
 	void calcpathlength(const PathBase::PathVector &PathVec);
 
+	void setlayerheighttol(const float &layer_height_tol_val);
+	void calclayerheights(const PathBase::PathVector& PathVec);
+
 	// gets all calculated vecs. MAKE SURE THEY ARE CALCULATED BEFORE!
-	void getfieldvecs(std::vector<flttype> &deltaangles, std::vector<flttype> &deltaangles_filtered, std::vector<flttype> &curvatures, std::vector<int> &pathclassification, std::vector<int> &pathclassificationwithchunks, std::vector<flttype> &chunklengths, std::vector<flttype> &lengthofchunks);
+	void getfieldvecs(std::vector<flttype> &deltaangles, std::vector<flttype> &deltaangles_filtered, std::vector<flttype> &curvatures, std::vector<int> &pathclassification, std::vector<int> &pathclassificationwithchunks, std::vector<flttype> &chunklengths, std::vector<flttype> &lengthofchunks, std::vector<flttype> &layer_height, std::vector<flttype> &heights_avail);
 
 
 private:
@@ -44,10 +47,16 @@ private:
 	std::vector<flttype> chunklengths; // stores length of every printpath to each point
 	std::vector<flttype> lengthofchunks; // stores length for every chunk (size() is no of chunks)
 
+	// chunk i has layer_height[i] : layer height is average of point height -> deal with slightly rotated layers
+	std::vector<flttype> layer_height;
+	// vec with all unique heights
+	std::vector<flttype> heights_avail;
+
 	std::string vtkfilename;
 
 	// helper to sort index / coord pairs (used for perim no classification)
 	static bool paircomparator(const std::pair<float, size_t> &l, const std::pair<float, size_t> &r);
 
-
+	// to decide if layer height is unique
+	float layer_height_tol;
 };

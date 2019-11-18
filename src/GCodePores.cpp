@@ -224,7 +224,7 @@ int main(int argc, char *argv[])
 		vtkfilename = vtkfilename + ".vtk";
 	}
 
-	std::vector<float> deltaangles_gcode, deltaangles_filtered, curvatures, feedrate, chunklength, lengthofchunks;
+	std::vector<float> deltaangles_gcode, deltaangles_filtered, curvatures, feedrate, chunklength, lengthofchunks, layer_height, heights_avail;
 	std::vector<int> pathclassification, pathclassificationwithchunks;
 
 	GCodeAnalysis GCodeAnalyser;
@@ -238,7 +238,10 @@ int main(int argc, char *argv[])
 														   // get vecs to write a csv at the end
 	
 	GCodeAnalyser.calcpathlength(pathVec);
-	GCodeAnalyser.getfieldvecs(deltaangles_gcode, deltaangles_filtered, curvatures, pathclassification, pathclassificationwithchunks, chunklength, lengthofchunks);
+	float layer_height_tol = 0.001f; // 1 mue tolerance
+	GCodeAnalyser.setlayerheighttol(layer_height_tol);
+	GCodeAnalyser.calclayerheights(pathVec);
+	GCodeAnalyser.getfieldvecs(deltaangles_gcode, deltaangles_filtered, curvatures, pathclassification, pathclassificationwithchunks, chunklength, lengthofchunks, layer_height, heights_avail);
 	
 	std::cout << "successfully finished analysing GCode! \nstarting to write data... \n";
 
@@ -306,42 +309,11 @@ int main(int argc, char *argv[])
 		porevec[porenum][Ycol] = porevec[porenum][Ycol] * ImageParser.pixelwidth[1];
 		porevec[porenum][Zcol] = porevec[porenum][Zcol] * ImageParser.pixelwidth[2];
 	}
-	//********************************************************************************************************************************************
-
-
 
 
 	//********************************************************************************************************************************************
-	// start of some pre calculations 
-	// list of layer heights of chunks --> needed to process layers selectively, or just speed up process
-	// list of (unique) heights --> find neighbouring heights
-
-	// generate a list of layer heights for each chunk in gcode -- chunk i has layer_height[i]
-	// layer height is average of point height -> deal with slightly rotated layers
-	std::vector<float> layer_height;
-	float avg_lay_height;
-	for (auto &pathchunk : pathVec) {
-		avg_lay_height = 0;
-		for (std::size_t i = 0; i < pathchunk.size(); ++i) {
-			avg_lay_height += pathchunk[i][2];
-		}
-		avg_lay_height = avg_lay_height / pathchunk.size();
-		layer_height.push_back(avg_lay_height);
-	}
-	// next we generate a vec with all unique heights
-	std::vector<float> heights_avail;
-	float layer_height_tol = 0.001f;
-	heights_avail.push_back(layer_height[0]); // first entry is unique per definition
-	for (unsigned int j = 1; j < layer_height.size(); ++j) {
-		// this requires the chunks to be in a sorted manner!
-		// tol is 1/1000 of layer dim
-		if (!arefloatsequal(layer_height[j], heights_avail.back(), layer_height_tol)) {
-			heights_avail.push_back(layer_height[j]);
-		}
-	}
-
-	// end precalculations
 	//********************************************************************************************************************************************
+	
 	float current_pore_height, minheightdiff, GCodeAzimuth, angledelta, PoreAzimuth;
 
 	unsigned int chunknum_next;
@@ -368,7 +340,8 @@ int main(int argc, char *argv[])
 	//**************************************************************************
 	// loop through each pore
 	float processed = -1, oldprocessed = -1; // for progress bar
-	int progresscounter = 0;
+	size_t progresscounter = 0;
+	const size_t sizeporevec = porevec.size();
 
 //#pragma loop(hint_parallel(0))  
 #pragma omp parallel for private(current_pore_height, minheightdiff, GCodeAzimuth, angledelta, PoreAzimuth, chunknum_next, deltaindex, height_index)
@@ -380,13 +353,7 @@ int main(int argc, char *argv[])
 
 #pragma omp critical (outpinfo)
 		{
-			////*************** generate progress information **************
-			oldprocessed = processed;
-			processed = std::roundf(static_cast<float>(progresscounter) / static_cast<float>(porevec.size()) * 100); // fertig in prozent (0.xy)
-			if (oldprocessed != processed) { // new percent values only
-				std::cout << "\rprocessed " << processed << "% of pores!";
-			}
-			////************************************************************
+			progressbar(processed, oldprocessed, progresscounter, sizeporevec);
 		}
 		//********************************************************************************************************************************************
 		// reduce points to be considered by sorting out relevant layers
@@ -396,7 +363,7 @@ int main(int argc, char *argv[])
 		minheightdiff = std::numeric_limits<float>::max();
 
 		// iterate through height of chunks (layer_height)
-		// if height pore - height chunk -> minimal ---> this is the next layer bzw next chunk, but other chunks in same layer are also possible
+		// if height pore - height chunk -> minimal ---> this is the next layer resp. next chunk, but other chunks in same layer are also possible
 		for (unsigned int j = 0; j < layer_height.size(); ++j) {
 			if (abs(current_pore_height - layer_height[j]) < minheightdiff) {
 				chunknum_next = j;
