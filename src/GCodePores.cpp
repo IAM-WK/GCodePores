@@ -11,7 +11,7 @@
  *
  *  If you intend to use this work for your scientific publication  please cite the
  *  appropriate publications listed on
- *  <https://github.com/LukasEnglert/GCodePores>
+ *  <https://github.com/IAM-WK/GCodePores>
  *
  *************************************************************************************
  *************************************************************************************/
@@ -448,7 +448,7 @@ int main(int argc, char *argv[])
 //********************************************************************************************************************************************
 // find nearest neighbours of pore
 //**************************************************************
-// stores X,Y,Z,dX,dY,dZ,distance to pore -- of neighbourhood path points 
+// stores X,Y,Z,dX,dY,dZ,distance to pore, pathclass, chunknumber -- of neighbourhood path points 
 		std::vector<std::array<float, 9> > neighbourhood;
 
 		// loop through remaining path points, calc distance and store to neighbourhood
@@ -534,7 +534,7 @@ int main(int argc, char *argv[])
 			PoreAzimuth = PoreAzimuth + 180.f;
 		}
 
-		//std::cout << "gcode azimuth " << GCodeAzimuth << std::endl;
+
 
 		// calculate delta angle between pore and gcode
 		angledelta = abs( GCodeAzimuth - PoreAzimuth);
