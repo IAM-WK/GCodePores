@@ -221,6 +221,15 @@ void GCodeAnalysis::classifypoints(const PathBase::PathVector & PathVec, const f
 	//PathBase::outputcontourvtkfile(this->pathclassification, this->vtkfilename, "pathclassification");
 }
 
+void GCodeAnalysis::findfeedrate(const PathBase::PathVector& PathVec)
+{
+	for (unsigned int i = 0; i < PathVec.size(); ++i) {
+		for (unsigned int j = 0; j < PathVec[i].size(); ++j) {
+			feedrate.push_back(PathVec[i][j][7]);
+		}
+	}
+}
+
 void GCodeAnalysis::calcpathlength(const PathBase::PathVector & PathVec)
 {
 	
@@ -237,7 +246,7 @@ void GCodeAnalysis::calcpathlength(const PathBase::PathVector & PathVec)
 	// store length of chunk to every point in PathVec
 	for (unsigned int i = 0; i < PathVec.size(); ++i) {
 		for (unsigned int j = 0; j < PathVec[i].size(); ++j) {
-			chunklengths.push_back(lengthofchunks[i]);
+			lengthofchunks_points.push_back(lengthofchunks[i]);
 		}
 	}
 
@@ -274,18 +283,6 @@ void GCodeAnalysis::calclayerheights(const PathBase::PathVector& PathVec)
 	}
 }
 
-void GCodeAnalysis::getfieldvecs(std::vector<flttype>& deltaanglesvec, std::vector<flttype>& deltaangles_filteredvec, std::vector<flttype>& curvaturesvec, std::vector<int>& pathclassificationvec, std::vector<int> &pathclassificationwithchunksvec, std::vector<flttype> &chunklengthsvec, std::vector<flttype> &lengthofchunksvec, std::vector<flttype> &layer_heightvec, std::vector<flttype> &heights_availvec)
-{
-	deltaanglesvec = this->deltaangles;
-	deltaangles_filteredvec = this->deltaangles_filtered;
-	curvaturesvec = this->curvatures;
-	pathclassificationvec = this->pathclassification;
-	chunklengthsvec = this->chunklengths;
-	lengthofchunksvec = this->lengthofchunks;
-	pathclassificationwithchunksvec = this->pathclassificationwithchunks;
-	layer_heightvec = this->layer_height;
-	heights_availvec = this->heights_avail;
-}
 
 bool GCodeAnalysis::paircomparator(const std::pair<float, size_t> &l, const std::pair<float, size_t> &r)
 {

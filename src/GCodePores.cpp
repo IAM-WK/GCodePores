@@ -161,6 +161,9 @@ int main(int argc, char *argv[])
 	// END OF INPUT 
 	//***********************************************************************
 
+	//***********************************************************************
+	// GCODE PREPROCESSING : PARSING - TRANSFORMATION - INTERPOLATION - ANALYSIS
+	//***********************************************************************
 
 	//*************** read GCode and generate object ************************
 	double wall_start = get_wall_time();
@@ -224,8 +227,6 @@ int main(int argc, char *argv[])
 		vtkfilename = vtkfilename + ".vtk";
 	}
 
-	std::vector<float> deltaangles_gcode, deltaangles_filtered, curvatures, feedrate, chunklength, lengthofchunks, layer_height, heights_avail;
-	std::vector<int> pathclassification, pathclassificationwithchunks;
 
 	GCodeAnalysis GCodeAnalyser;
 	GCodeAnalyser.setvtkfilename(vtkfilename);
@@ -235,14 +236,12 @@ int main(int argc, char *argv[])
 	if (slmcompat) { extr_width = 0.125f; } //todo: estimate from GCode
 	else if (arefloatsequal(extr_width, 0.f)) { extr_width = 0.45f; };
 	GCodeAnalyser.classifypoints(pathVec, 0.5f*extr_width); // maybe a bit too conservative to use width as tolerance...
-														   // get vecs to write a csv at the end
-	
 	GCodeAnalyser.calcpathlength(pathVec);
-	float layer_height_tol = 0.001f; // 1 mue tolerance
+	const float layer_height_tol = 0.001f; // 1 mue tolerance
 	GCodeAnalyser.setlayerheighttol(layer_height_tol);
 	GCodeAnalyser.calclayerheights(pathVec);
-	GCodeAnalyser.getfieldvecs(deltaangles_gcode, deltaangles_filtered, curvatures, pathclassification, pathclassificationwithchunks, chunklength, lengthofchunks, layer_height, heights_avail);
-	
+	GCodeAnalyser.findfeedrate(pathVec);
+
 	std::cout << "successfully finished analysing GCode! \nstarting to write data... \n";
 
 	// print normed coords -- just for debugging
@@ -257,7 +256,7 @@ int main(int argc, char *argv[])
 	// async launches the worker which writes the fields to the vtk file
 	std::future<void> writework;
 	if (!vtkoutputoff) {
-		writework = std::async(std::launch::async, PathBase::writerWorker, pathVec, vtkfilename, argList, pathclassification, chunklength);
+		writework = std::async(std::launch::async, PathBase::writerWorker, pathVec, vtkfilename, argList, GCodeAnalyser.pathclassification, GCodeAnalyser.lengthofchunks_points, GCodeAnalyser.feedrate);
 	}
 	if (vtkfileonly) {
 		if (!vtkoutputoff) {
@@ -267,12 +266,15 @@ int main(int argc, char *argv[])
 	}
 	//************************* end analyse GCode ****************************
 
-	//*****************************************************************************************************************************
-	// end of gcode preprocessing, start of pore file preprocessing
-	//*****************************************************************************************************************************
+	//***********************************************************************
+	// END OF GCODE PREPROCESSING
+	//***********************************************************************
+	
+	//***********************************************************************
+	// MLJ POREFILE PREPROCESSING: PARSING - ANALYSIS - TRANSFORMATION
+	//***********************************************************************
 
-
-	//************************* parse pore file from MLJ *********************
+	//************************* parse pore file from MLJ ********************
 
 	PoreParser poreparser;
 	poreparser.setFilename(PoreFilename);
@@ -310,6 +312,9 @@ int main(int argc, char *argv[])
 		porevec[porenum][Zcol] = porevec[porenum][Zcol] * ImageParser.pixelwidth[2];
 	}
 
+	//***********************************************************************
+	// END MLJ POREFILE PREPROCESSING
+	//***********************************************************************
 
 	//********************************************************************************************************************************************
 	//********************************************************************************************************************************************
@@ -326,16 +331,16 @@ int main(int argc, char *argv[])
 	// vec to store how many defect voxels a chunk contains; size is number of chunks, start with 0
 	std::vector<size_t> poreinchunkfrequencies_voxel_weighted(pathVec.size(), 0);
 	// what is the highest class found?
-	size_t maxclass = *max_element(pathclassificationwithchunks.begin(), pathclassificationwithchunks.end());
+	size_t maxclass = *max_element(GCodeAnalyser.pathclassificationwithchunks.begin(), GCodeAnalyser.pathclassificationwithchunks.end());
 	// vec to store number of pores in each class; eg class 5 -> highest entry = 5
 	std::vector<size_t> frequenciesinclasses(maxclass+1, 0);
 	// vec to store number of pores in each class; eg class 5 -> highest entry = 5
 	//TODO: unsigned int maybe to small
 	std::vector<size_t> frequenciesinclasses_volumeweighted(maxclass + 1, 0);
 	// vec to store how many pores a layer contains
-	std::vector<size_t> poresinlayer(heights_avail.size(), 0);
+	std::vector<size_t> poresinlayer(GCodeAnalyser.heights_avail.size(), 0);
 	// same, but summed volume instead of number
-	std::vector<size_t> porevolumeinlayer(heights_avail.size(), 0);
+	std::vector<size_t> porevolumeinlayer(GCodeAnalyser.heights_avail.size(), 0);
 
 	//**************************************************************************
 	// loop through each pore
@@ -343,7 +348,7 @@ int main(int argc, char *argv[])
 	size_t progresscounter = 0;
 	const size_t sizeporevec = porevec.size();
 
-//#pragma loop(hint_parallel(0))  
+
 #pragma omp parallel for private(current_pore_height, minheightdiff, GCodeAzimuth, angledelta, PoreAzimuth, chunknum_next, deltaindex, height_index)
 	for (int porenum = 0; porenum < porevec.size(); ++porenum) {
 
@@ -353,6 +358,7 @@ int main(int argc, char *argv[])
 
 #pragma omp critical (outpinfo)
 		{
+			// show and update progressbar
 			progressbar(processed, oldprocessed, progresscounter, sizeporevec);
 		}
 		//********************************************************************************************************************************************
@@ -364,10 +370,10 @@ int main(int argc, char *argv[])
 
 		// iterate through height of chunks (layer_height)
 		// if height pore - height chunk -> minimal ---> this is the next layer resp. next chunk, but other chunks in same layer are also possible
-		for (unsigned int j = 0; j < layer_height.size(); ++j) {
-			if (abs(current_pore_height - layer_height[j]) < minheightdiff) {
+		for (unsigned int j = 0; j < GCodeAnalyser.layer_height.size(); ++j) {
+			if (abs(current_pore_height - GCodeAnalyser.layer_height[j]) < minheightdiff) {
 				chunknum_next = j;
-				minheightdiff = abs(current_pore_height - layer_height[j]);
+				minheightdiff = abs(current_pore_height - GCodeAnalyser.layer_height[j]);
 			}
 		}
 
@@ -378,8 +384,8 @@ int main(int argc, char *argv[])
 
 		// this pore is in layer with height of layer_height[chunknum_next]
 		// search entry in heights_avail with this layer height -> index in heights_avail is index for poresinlayer
-		for (unsigned int layernum = 0; layernum < heights_avail.size(); ++layernum) {
-			if (arefloatsequal(layer_height[chunknum_next], heights_avail[layernum], layer_height_tol)) {
+		for (unsigned int layernum = 0; layernum < GCodeAnalyser.heights_avail.size(); ++layernum) {
+			if (arefloatsequal(GCodeAnalyser.layer_height[chunknum_next], GCodeAnalyser.heights_avail[layernum], layer_height_tol)) {
 #pragma omp atomic
 				poresinlayer[layernum] += 1;
 #pragma omp critical (calcvolume) // atomic only supports normal incrementation
@@ -394,15 +400,15 @@ int main(int argc, char *argv[])
 		deltaindex = 0, height_index = 0;
 
 		std::vector< float> heights_considered;
-		for (unsigned int j = 0; j < heights_avail.size(); ++j) {
-			if (arefloatsequal(heights_avail[j], layer_height[chunknum_next], layer_height_tol)) {
-				heights_considered.push_back(heights_avail[j]); // nearest layer itself
+		for (unsigned int j = 0; j < GCodeAnalyser.heights_avail.size(); ++j) {
+			if (arefloatsequal(GCodeAnalyser.heights_avail[j], GCodeAnalyser.layer_height[chunknum_next], layer_height_tol)) {
+				heights_considered.push_back(GCodeAnalyser.heights_avail[j]); // nearest layer itself
 				// loop with deltaindex to consider neighbouring layers
 				for (unsigned int numdeltalayer = 0; numdeltalayer < layersconsidered; ++numdeltalayer) {
 					deltaindex = static_cast<int>(round((static_cast<float>(deltaindex) * (-2.f) + 1.f) / 2.f));
 					height_index = j + deltaindex;
-					if ((height_index >= 0) && (height_index < heights_avail.size())) {
-						heights_considered.push_back(heights_avail[height_index]);
+					if ((height_index >= 0) && (height_index < GCodeAnalyser.heights_avail.size())) {
+						heights_considered.push_back(GCodeAnalyser.heights_avail[height_index]);
 					}
 				}
 				// if height was found, then there should not be anything else to be found...
@@ -417,9 +423,9 @@ int main(int argc, char *argv[])
 		// so we generate a vector with all chunknumbers to be considered
 		// make a comparison with 
 		std::vector<unsigned int> chunks_considered;
-		for (unsigned int j = 0; j < layer_height.size(); ++j) {
+		for (unsigned int j = 0; j < GCodeAnalyser.layer_height.size(); ++j) {
 			for (unsigned int m = 0; m < heights_considered.size(); ++m) {
-				if (arefloatsequal(layer_height[j], heights_considered[m], layer_height_tol)) {
+				if (arefloatsequal(GCodeAnalyser.layer_height[j], heights_considered[m], layer_height_tol)) {
 					chunks_considered.push_back(j);
 				}
 			}
@@ -450,7 +456,7 @@ int main(int argc, char *argv[])
 				// calculate distance pore to point
 				current_neighbour[6] = sqrt(((porevec[porenum][Xcol] - pathVec[chunks_considered[chunknum_index]][point_index][0]) * (porevec[porenum][Xcol] - pathVec[chunks_considered[chunknum_index]][point_index][0])) + ((porevec[porenum][Ycol] - pathVec[chunks_considered[chunknum_index]][point_index][1]) * (porevec[porenum][Ycol] - pathVec[chunks_considered[chunknum_index]][point_index][1])) + ((porevec[porenum][Zcol] - pathVec[chunks_considered[chunknum_index]][point_index][2]) * (porevec[porenum][Zcol] - pathVec[chunks_considered[chunknum_index]][point_index][2])));
 				// find out pathclassification for this neighbouring point
-				current_neighbour[7] = static_cast<float>(pathclassificationwithchunks[chunks_considered[chunknum_index]]);
+				current_neighbour[7] = static_cast<float>(GCodeAnalyser.pathclassificationwithchunks[chunks_considered[chunknum_index]]);
 				// store chunknumber of this very point --> needed for porespermm
 				current_neighbour[8] = static_cast<float>(chunks_considered[chunknum_index]);
 				neighbourhood.push_back(current_neighbour);
@@ -652,7 +658,7 @@ int main(int argc, char *argv[])
 	//  chunk i has lengthofchunks[i]; poreinchunkfrequencies gives num of pores in them
 	// first: which chunks go in which class?
 	// number of classes = max lengthofchunks / classwidth +1
-	float pathlengthnumofclasses = (*(std::max_element(lengthofchunks.begin(), lengthofchunks.end())) / pathlengthclasswidth) + 1;
+	float pathlengthnumofclasses = (*(std::max_element(GCodeAnalyser.lengthofchunks.begin(), GCodeAnalyser.lengthofchunks.end())) / pathlengthclasswidth) + 1;
 	// stores pores per mm for each pathlengthclass
 	std::vector<float> pathlengthshisto (static_cast<size_t>(pathlengthnumofclasses), 0); 
 	// stores pores per mm for each pathlengthclass - voxel weighted
@@ -664,12 +670,12 @@ int main(int argc, char *argv[])
 
 	// classify chunk in a pathlength; iterate through classes and take every chunk that fits in class
 	for (unsigned int pathlengthclass = 0; pathlengthclass < pathlengthshisto.size(); ++pathlengthclass) {
-		for (unsigned int chunknumber = 0; chunknumber < lengthofchunks.size(); ++chunknumber) {
+		for (unsigned int chunknumber = 0; chunknumber < GCodeAnalyser.lengthofchunks.size(); ++chunknumber) {
 			// check if this chunk fits in current class
-			if ((lengthofchunks[chunknumber] >= static_cast<float>(pathlengthclass)*pathlengthclasswidth) && (lengthofchunks[chunknumber] < static_cast<float>(pathlengthclass+1)*pathlengthclasswidth) ) {
+			if ((GCodeAnalyser.lengthofchunks[chunknumber] >= static_cast<float>(pathlengthclass)*pathlengthclasswidth) && (GCodeAnalyser.lengthofchunks[chunknumber] < static_cast<float>(pathlengthclass+1)*pathlengthclasswidth) ) {
 				// add pores to pathlengthshisto[pathlenghtsclass] and add length to pathlengthsinclass for normalising at the end
 				pathlengthshisto[pathlengthclass] += static_cast<float>(poreinchunkfrequencies[chunknumber]);
-				pathlengthsinclass[pathlengthclass] += lengthofchunks[chunknumber];
+				pathlengthsinclass[pathlengthclass] += GCodeAnalyser.lengthofchunks[chunknumber];
 				pathlengthshisto_volumeweighted[pathlengthclass] += poreinchunkfrequencies_voxel_weighted[chunknumber];
 			}
 		}

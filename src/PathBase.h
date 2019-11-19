@@ -127,13 +127,16 @@ public:
 
 	
 	// worker process that outputs data
-	static void writerWorker(const PathBase::PathVector &pathVec, const std::string &vtkfilename, const std::vector<std::string> &arglist, const std::vector<int> &pathclassification, const std::vector<float> &chunklength) {
+	static void writerWorker(const PathBase::PathVector &pathVec, const std::string &vtkfilename, const std::vector<std::string> &arglist, const std::vector<int> &pathclassification, const std::vector<float> &chunklength, const std::vector<float> &feedrate) {
 		std::cout << "writing vtk file!\n";
 		PathBase::outputvtkfile(pathVec, vtkfilename, arglist);
+		std::cout << "writing feedrate to vtk file!\n";
+		PathBase::outputcontourvtkfile(feedrate, vtkfilename, "feedrate");
 		std::cout << "writing pathclassifications to vtk file!\n";
 		PathBase::outputcontourvtkfile(pathclassification, vtkfilename, "pathclassification");
 		std::cout << "writing pathlengths to vtk file!\n";
 		PathBase::outputcontourvtkfile(chunklength, vtkfilename, "pathlengths");
+
 	}
 
 
