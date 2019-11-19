@@ -11,5 +11,5 @@ IF (Boost_FOUND)
     ADD_DEFINITIONS( "-DHAS_BOOST" )
 ENDIF()
 
-add_executable(GCodePores GCodePores.cpp helperfunctions.cpp helperfunctions.h GCodeParser.cpp GCodeParser.h GCodeTransform.cpp GCodeTransform.h GCodeInterpolation.cpp GCodeInterpolation.h PathBase.cpp PathBase.h mhdParser.cpp mhdParser.h GCodeAnalysis.cpp GCodeAnalysis.h TimeMeasurement.cpp TimeMeasurement.h PoreParser.cpp PoreParser.h )
+add_executable(GCodePores GCodePores.cpp helperfunctions.cpp helperfunctions.h GCodeParser.cpp GCodeParser.h GCodeTransform.cpp GCodeTransform.h GCodeInterpolation.cpp GCodeInterpolation.h PathBase.cpp PathBase.h mhdParser.cpp mhdParser.h GCodeAnalysis.cpp GCodeAnalysis.h TimeMeasurement.cpp TimeMeasurement.h PoreParser.cpp PoreParser.h PorePathCorrelate.cpp PorePathCorrelate.h )
 
