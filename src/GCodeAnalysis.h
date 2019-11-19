@@ -9,7 +9,6 @@ class GCodeAnalysis: public PathBase
 {
 public:
 	 
-	typedef float flttype;
 
 	void setvtkfilename(const std::string &vtkfilenamearg);
 
@@ -34,19 +33,19 @@ public:
 
 
 	// calculated vectors - field over vtk lines
-	std::vector<flttype> deltaangles;
-	std::vector<flttype> deltaangles_filtered;
-	std::vector<flttype> curvatures; 
+	std::vector<float> deltaangles;
+	std::vector<float> deltaangles_filtered;
+	std::vector<float> curvatures;
 	std::vector<int> pathclassification;
 	std::vector<int> pathclassificationwithchunks;
-	std::vector<flttype> lengthofchunks; // stores length for every chunk (size() is no of chunks)
-	std::vector<flttype> lengthofchunks_points; // stores length of every printpath to each point
-	std::vector<flttype> feedrate;
+	std::vector<float> lengthofchunks; // stores length for every chunk (size() is no of chunks)
+	std::vector<float> lengthofchunks_points; // stores length of every printpath to each point
+	std::vector<float> feedrate;
 
 	// chunk i has layer_height[i] : layer height is average of point height -> deal with slightly rotated layers
-	std::vector<flttype> layer_height;
+	std::vector<float> layer_height;
 	// vec with all unique heights
-	std::vector<flttype> heights_avail;
+	std::vector<float> heights_avail;
 
 
 private:

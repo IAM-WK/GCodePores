@@ -12,7 +12,7 @@ void GCodeAnalysis::calcdeltaangle(const PathBase::PathVector & PathVec, const b
 	// save disttonext in vec
 	// calc filteredangles
 	// anglei = anglei-1+anglei+anglei+1, je nach pathlength
-	flttype deltaangle;
+	float deltaangle;
 	std::vector<float> pathlengths;
 	this->deltaangles.push_back(0.0); // this is a dummy value... first value is somehow arbitrary
 	pathlengths.push_back(PathVec[0][0][6]);
@@ -44,7 +44,7 @@ void GCodeAnalysis::calcdeltaangle(const PathBase::PathVector & PathVec, const b
 	}
 	if (filterangles) {
 		this->deltaangles_filtered = this->deltaangles; // copy
-		flttype carry_distance = 0, carry_angle = 0, start_distance = 0;
+		float carry_distance = 0, carry_angle = 0, start_distance = 0;
 		size_t temp_i = 0;
 		int deltaindex = 0;
 		// filter angles for a value over a minimum distance

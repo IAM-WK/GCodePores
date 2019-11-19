@@ -166,14 +166,14 @@ int main(int argc, char *argv[])
 	//***********************************************************************
 
 	//*************** read GCode and generate object ************************
-	double wall_start = get_wall_time();
+	const double wall_start = get_wall_time();
 	GCodeParser PathParser;
 	PathParser.setFilename(GCodeFilename);
 	PathParser.setSkirtoffset(skirtoffset);
 	PathParser.setBoundarystrings(startstring, endstring);
 	PathParser.setCompatibility(freeformcompat, slmcompat);
 	PathParser.Execute();// read GCode, catch read error 
-	double wall_parser = get_wall_time();
+	const double wall_parser = get_wall_time();
 	std::cout << "GCodeParser finished! Time needed = " << std::to_string(wall_parser - wall_start) << "\n";
 	//************************* end read GCode *******************************
 
@@ -196,7 +196,7 @@ int main(int argc, char *argv[])
 	GCodeTransformer.setInput(PathParser.GetOutput());
 	GCodeTransformer.Execute(); // start of printing in image; {X,Y,Z}, Phi (radians), length of image in y' direction, z' direction; 5.32f,8.10f,3.0f, 2.73
 								// select GCode representation
-	double wall_transform = get_wall_time();
+	const double wall_transform = get_wall_time();
 	std::cout << "Path coordinate transformation finished! Time needed = " << std::to_string(wall_transform - wall_parser) << "\n";
 	//********************* end coordinate transformation *******************
 
@@ -214,7 +214,7 @@ int main(int argc, char *argv[])
 	else {
 		pathVec = GCodeTransformer.GetOutput();
 	}
-	double wall_interpol = get_wall_time();
+	const double wall_interpol = get_wall_time();
 	std::cout << "Path interpolation finished! Time needed = " << std::to_string(wall_interpol - wall_transform) << "\n";
 	//************************* end interpolate GCode ***********************
 
@@ -242,7 +242,12 @@ int main(int argc, char *argv[])
 	GCodeAnalyser.calclayerheights(pathVec);
 	GCodeAnalyser.findfeedrate(pathVec);
 
-	std::cout << "successfully finished analysing GCode! \nstarting to write data... \n";
+	const double wall_analysis = get_wall_time();
+	std::cout << "Path analysis finished! Time needed = " << std::to_string(wall_analysis - wall_interpol) << "\n";
+
+	std::cout << "\nstarting to write data... \n";
+	
+	//************************* end analyse GCode ****************************
 
 	// print normed coords -- just for debugging
 	// for (auto &pathitem : pathVec) {
@@ -251,7 +256,7 @@ int main(int argc, char *argv[])
 	//		std::cout << "X: " << pathitem[i][0] << "Y: " << pathitem[i][1] << "Z: " << pathitem[i][2] << "feedrate: " << pathitem[i][7] << std::endl;
 	//	}
 	//}
-
+	//************************* write data ****************************
 	//** data writing consumes much time, so writing will be done asynchronous to the rest of the work **
 	// async launches the worker which writes the fields to the vtk file
 	std::future<void> writework;
@@ -264,7 +269,6 @@ int main(int argc, char *argv[])
 		}
 		return EXIT_SUCCESS; // do not process further
 	}
-	//************************* end analyse GCode ****************************
 
 	//***********************************************************************
 	// END OF GCODE PREPROCESSING
@@ -318,11 +322,7 @@ int main(int argc, char *argv[])
 
 	//********************************************************************************************************************************************
 	//********************************************************************************************************************************************
-	
-	float current_pore_height, minheightdiff, GCodeAzimuth, angledelta, PoreAzimuth;
 
-	unsigned int chunknum_next;
-	int deltaindex, height_index;
 
 	// float: deltaangle, int: class, int: volume
 	std::vector<std::tuple<float, int, int>> deltaangles(porevec.size(), std::make_tuple(150.f, 0, 0));
@@ -343,9 +343,15 @@ int main(int argc, char *argv[])
 	std::vector<size_t> porevolumeinlayer(GCodeAnalyser.heights_avail.size(), 0);
 
 	//**************************************************************************
+
+	float current_pore_height, minheightdiff, GCodeAzimuth, angledelta, PoreAzimuth;
+
+	unsigned int chunknum_next;
+	int deltaindex, height_index;
+
 	// loop through each pore
-	float processed = -1, oldprocessed = -1; // for progress bar
-	size_t progresscounter = 0;
+
+	size_t progresscounter = 0; // for progressbar
 	const size_t sizeporevec = porevec.size();
 
 
@@ -359,7 +365,7 @@ int main(int argc, char *argv[])
 #pragma omp critical (outpinfo)
 		{
 			// show and update progressbar
-			progressbar(processed, oldprocessed, progresscounter, sizeporevec);
+			progressbar(progresscounter, sizeporevec);
 		}
 		//********************************************************************************************************************************************
 		// reduce points to be considered by sorting out relevant layers

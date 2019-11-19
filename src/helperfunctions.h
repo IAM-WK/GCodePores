@@ -12,6 +12,9 @@ bool arefloatsequal(const float &A, const float &B, const float &maxRelDiff = FL
 float clamped_acos(const float &value);
 
 ////*************** generate progress information **************
-void progressbar(float &processed, float &oldprocessed, const size_t &progresscounter, const size_t &sizeporevec);
+void progressbar(const size_t &progresscounter, const size_t &sizeporevec);
 
-const double PI = 3.141592653589793238463;
+constexpr double PI = 3.141592653589793238463;
+
+// for progressbar
+static float processed = -1, oldprocessed = -1; // for progress bar
