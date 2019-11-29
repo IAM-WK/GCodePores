@@ -29,6 +29,7 @@
 #include "PoreParser.h"
 #include "mhdParser.h"
 #include "TimeMeasurement.h"
+#include "PorePathCorrelate.h"
 
 // boost libs
 #include <boost/program_options.hpp>
@@ -237,7 +238,7 @@ int main(int argc, char *argv[])
 	else if (arefloatsequal(extr_width, 0.f)) { extr_width = 0.45f; };
 	GCodeAnalyser.classifypoints(pathVec, 0.5f*extr_width); // maybe a bit too conservative to use width as tolerance...
 	GCodeAnalyser.calcpathlength(pathVec);
-	const float layer_height_tol = 0.001f; // 1 mue tolerance
+	constexpr float layer_height_tol = 0.001f; // 1 mue tolerance
 	GCodeAnalyser.setlayerheighttol(layer_height_tol);
 	GCodeAnalyser.calclayerheights(pathVec);
 	GCodeAnalyser.findfeedrate(pathVec);
@@ -294,19 +295,20 @@ int main(int argc, char *argv[])
 
 
 	//*************** output processed information from MLJ *****************
-	std::cout << "volume of all pores = " << poreparser.porevolume << " voxels; => " << (poreparser.porevolume*ImageParser.pixelwidth[0] * ImageParser.pixelwidth[1] * ImageParser.pixelwidth[2]) << "mm^3 \n";
-	std::cout << "volume of considered pores = " << poreparser.filteredporesvolume << " voxels; => " << (poreparser.filteredporesvolume* ImageParser.pixelwidth[0] * ImageParser.pixelwidth[1] * ImageParser.pixelwidth[2]) << "mm^3 \n";
+	const double pixelvolume = static_cast<double>(ImageParser.pixelwidth[0]) * static_cast<double>(ImageParser.pixelwidth[1]) * static_cast<double>(ImageParser.pixelwidth[2]);
+	std::cout << "volume of all pores = " << poreparser.porevolume << " voxels; => " << (poreparser.porevolume* pixelvolume) << "mm^3 \n";
+	std::cout << "volume of considered pores = " << poreparser.filteredporesvolume << " voxels; => " << (poreparser.filteredporesvolume* pixelvolume) << "mm^3 \n";
 	std::cout << "this corresponds to a fraction of " << (std::roundf(static_cast<float>(poreparser.filteredporesvolume) / static_cast<float>(poreparser.porevolume) * 1000)/10) << "% \n";
 	std::cout << "fraction of pores (by number) that were classified as non gas pores: " << (std::roundf(static_cast<float>(poreparser.khpores) / static_cast<float>(poreparser.khpores+poreparser.gaspores) * 1000) / 10) << "% \n";
 	// save this informations to a vec to output it to the csv file
 	std::vector<std::string> poreinformations;
-	poreinformations.push_back("volume of all pores = " + std::to_string(poreparser.porevolume) + " voxels; => " + std::to_string(poreparser.porevolume* ImageParser.pixelwidth[0] * ImageParser.pixelwidth[1] * ImageParser.pixelwidth[2]) + "mm^3 ");
-	poreinformations.push_back("volume of considered pores = " + std::to_string(poreparser.filteredporesvolume) + " voxels; => " + std::to_string(poreparser.filteredporesvolume* ImageParser.pixelwidth[0] * ImageParser.pixelwidth[1] * ImageParser.pixelwidth[2]) + "mm^3 ");
+	poreinformations.push_back("volume of all pores = " + std::to_string(poreparser.porevolume) + " voxels; => " + std::to_string(poreparser.porevolume* pixelvolume) + "mm^3 ");
+	poreinformations.push_back("volume of considered pores = " + std::to_string(poreparser.filteredporesvolume) + " voxels; => " + std::to_string(poreparser.filteredporesvolume* pixelvolume) + "mm^3 ");
 	poreinformations.push_back("this corresponds to a fraction of " + std::to_string(std::roundf(static_cast<float>(poreparser.filteredporesvolume) / static_cast<float>(poreparser.porevolume) * 1000) / 10) + "% ");
 	poreinformations.push_back("fraction of pores (by number) that were classified as non gas pores: " + std::to_string(std::roundf(static_cast<float>(poreparser.khpores) / static_cast<float>(poreparser.khpores + poreparser.gaspores) * 1000) / 10) + "% ");
 	//*************** end output processed information **********************
 
-	std::vector < std::array<float, 26>> porevec;
+	PoreParser::PoreVecType porevec;
 	porevec = poreparser.GetOutput();
 	// entry 5,6,7 is center x,y,z // 8,9,10 is rad1,2,3 // 
 	// post process pore coords: pixels to mm
@@ -320,399 +322,27 @@ int main(int argc, char *argv[])
 	// END MLJ POREFILE PREPROCESSING
 	//***********************************************************************
 
-	//********************************************************************************************************************************************
-	//********************************************************************************************************************************************
+	//***********************************************************************
+	// PORES TO PATH CORRELATION
+	//***********************************************************************
+	PorePathCorrelate Correlator(&pathVec, &GCodeAnalyser.pathclassificationwithchunks, &GCodeAnalyser.layer_height, &GCodeAnalyser.heights_avail, &GCodeAnalyser.lengthofchunks, &porevec);
+	Correlator.setInputSettings(layer_height_tol, layersconsidered, nextneighbours, classwidth, pathlengthclasswidth, pixelvolume);
+	Correlator.setPoreCols(Xcol, Ycol, Zcol, azimuthcol, volumecol);
+	Correlator.Execute();
+	//***********************************************************************
+	// END PORES TO PATH CORRELATION
+	//***********************************************************************
 
-
-	// float: deltaangle, int: class, int: volume
-	std::vector<std::tuple<float, int, int>> deltaangles(porevec.size(), std::make_tuple(150.f, 0, 0));
-	// vec to store how many pores a chunk contains; size is number of chunks, start with 0
-	std::vector<size_t> poreinchunkfrequencies(pathVec.size(), 0);
-	// vec to store how many defect voxels a chunk contains; size is number of chunks, start with 0
-	std::vector<size_t> poreinchunkfrequencies_voxel_weighted(pathVec.size(), 0);
-	// what is the highest class found?
-	size_t maxclass = *max_element(GCodeAnalyser.pathclassificationwithchunks.begin(), GCodeAnalyser.pathclassificationwithchunks.end());
-	// vec to store number of pores in each class; eg class 5 -> highest entry = 5
-	std::vector<size_t> frequenciesinclasses(maxclass+1, 0);
-	// vec to store number of pores in each class; eg class 5 -> highest entry = 5
-	//TODO: unsigned int maybe to small
-	std::vector<size_t> frequenciesinclasses_volumeweighted(maxclass + 1, 0);
-	// vec to store how many pores a layer contains
-	std::vector<size_t> poresinlayer(GCodeAnalyser.heights_avail.size(), 0);
-	// same, but summed volume instead of number
-	std::vector<size_t> porevolumeinlayer(GCodeAnalyser.heights_avail.size(), 0);
-
-	//**************************************************************************
-
-	float current_pore_height, minheightdiff, GCodeAzimuth, angledelta, PoreAzimuth;
-
-	unsigned int chunknum_next;
-	int deltaindex, height_index;
-
-	// loop through each pore
-
-	size_t progresscounter = 0; // for progressbar
-	const size_t sizeporevec = porevec.size();
-
-
-#pragma omp parallel for private(current_pore_height, minheightdiff, GCodeAzimuth, angledelta, PoreAzimuth, chunknum_next, deltaindex, height_index)
-	for (int porenum = 0; porenum < porevec.size(); ++porenum) {
-
-		// unfortunately this is not so easy in parallel ... :(
-#pragma omp atomic
-		++progresscounter;
-
-#pragma omp critical (outpinfo)
-		{
-			// show and update progressbar
-			progressbar(progresscounter, sizeporevec);
-		}
-		//********************************************************************************************************************************************
-		// reduce points to be considered by sorting out relevant layers
-		// first find next layer coord for porecenter.z
-		current_pore_height = porevec[porenum][Zcol];
-		chunknum_next = std::numeric_limits<unsigned int>::max();
-		minheightdiff = std::numeric_limits<float>::max();
-
-		// iterate through height of chunks (layer_height)
-		// if height pore - height chunk -> minimal ---> this is the next layer resp. next chunk, but other chunks in same layer are also possible
-		for (unsigned int j = 0; j < GCodeAnalyser.layer_height.size(); ++j) {
-			if (abs(current_pore_height - GCodeAnalyser.layer_height[j]) < minheightdiff) {
-				chunknum_next = j;
-				minheightdiff = abs(current_pore_height - GCodeAnalyser.layer_height[j]);
-			}
-		}
-
-		//***////***////***////***////***////***////***////***////***////***////***////***////***////***//
-		// we also can now classify the pore as being in Perimeter or Hatching
-		// increment frequency for class of chunk
-		//
-
-		// this pore is in layer with height of layer_height[chunknum_next]
-		// search entry in heights_avail with this layer height -> index in heights_avail is index for poresinlayer
-		for (unsigned int layernum = 0; layernum < GCodeAnalyser.heights_avail.size(); ++layernum) {
-			if (arefloatsequal(GCodeAnalyser.layer_height[chunknum_next], GCodeAnalyser.heights_avail[layernum], layer_height_tol)) {
-#pragma omp atomic
-				poresinlayer[layernum] += 1;
-#pragma omp critical (calcvolume) // atomic only supports normal incrementation
-				{
-					porevolumeinlayer[layernum] += static_cast<size_t>(porevec[porenum][volumecol]);
-				}
-			}
-		}
-		// next step is to reduce heights_avail to only the heights we need
-		// formula to alternatingly select height +1/-1/+2/-2 ...:
-		// deltaindex = static_cast<int>(round((static_cast<float>(deltaindex) * (-2.f) + 1.f) / 2.f));
-		deltaindex = 0, height_index = 0;
-
-		std::vector< float> heights_considered;
-		for (unsigned int j = 0; j < GCodeAnalyser.heights_avail.size(); ++j) {
-			if (arefloatsequal(GCodeAnalyser.heights_avail[j], GCodeAnalyser.layer_height[chunknum_next], layer_height_tol)) {
-				heights_considered.push_back(GCodeAnalyser.heights_avail[j]); // nearest layer itself
-				// loop with deltaindex to consider neighbouring layers
-				for (unsigned int numdeltalayer = 0; numdeltalayer < layersconsidered; ++numdeltalayer) {
-					deltaindex = static_cast<int>(round((static_cast<float>(deltaindex) * (-2.f) + 1.f) / 2.f));
-					height_index = j + deltaindex;
-					if ((height_index >= 0) && (height_index < GCodeAnalyser.heights_avail.size())) {
-						heights_considered.push_back(GCodeAnalyser.heights_avail[height_index]);
-					}
-				}
-				// if height was found, then there should not be anything else to be found...
-				break;
-			}
-		}
-		/*std::cout << " size avail heights =  " << heights_considered.size() << std::endl;
-		for (unsigned int j = 0; j < heights_considered.size(); ++j) {
-			std::cout << heights_considered[j] << std::endl;
-		}*/
-		// next we need to translate considered heights to chunknums
-		// so we generate a vector with all chunknumbers to be considered
-		// make a comparison with 
-		std::vector<unsigned int> chunks_considered;
-		for (unsigned int j = 0; j < GCodeAnalyser.layer_height.size(); ++j) {
-			for (unsigned int m = 0; m < heights_considered.size(); ++m) {
-				if (arefloatsequal(GCodeAnalyser.layer_height[j], heights_considered[m], layer_height_tol)) {
-					chunks_considered.push_back(j);
-				}
-			}
-		}
-		//std::cout << "considchunk chunkssize =  " << chunks_considered.size() << std::endl;
-		/*for (unsigned int j = 0; j < chunks_considered.size(); ++j) {
-			std::cout << chunks_considered[j] << std::endl;
-		}
-*/
-// end reduce neighbouring points
-// chunks considered contains every chunk to be considered
-//********************************************************************************************************************************************
-
-//********************************************************************************************************************************************
-// find nearest neighbours of pore
-//**************************************************************
-// stores X,Y,Z,dX,dY,dZ,distance to pore, pathclass, chunknumber -- of neighbourhood path points 
-		std::vector<std::array<float, 9> > neighbourhood;
-
-		// loop through remaining path points, calc distance and store to neighbourhood
-		for (unsigned int chunknum_index = 0; chunknum_index < chunks_considered.size(); ++chunknum_index) {
-			std::array<float, 9> current_neighbour;
-			for (unsigned int point_index = 0; point_index < pathVec[chunks_considered[chunknum_index]].size(); ++point_index) {
-				// transfer location and direction of point
-				for (unsigned int a = 0; a < 6; ++a) {
-					current_neighbour[a] = pathVec[chunks_considered[chunknum_index]][point_index][a];
-				}
-				// calculate distance pore to point
-				current_neighbour[6] = sqrt(((porevec[porenum][Xcol] - pathVec[chunks_considered[chunknum_index]][point_index][0]) * (porevec[porenum][Xcol] - pathVec[chunks_considered[chunknum_index]][point_index][0])) + ((porevec[porenum][Ycol] - pathVec[chunks_considered[chunknum_index]][point_index][1]) * (porevec[porenum][Ycol] - pathVec[chunks_considered[chunknum_index]][point_index][1])) + ((porevec[porenum][Zcol] - pathVec[chunks_considered[chunknum_index]][point_index][2]) * (porevec[porenum][Zcol] - pathVec[chunks_considered[chunknum_index]][point_index][2])));
-				// find out pathclassification for this neighbouring point
-				current_neighbour[7] = static_cast<float>(GCodeAnalyser.pathclassificationwithchunks[chunks_considered[chunknum_index]]);
-				// store chunknumber of this very point --> needed for porespermm
-				current_neighbour[8] = static_cast<float>(chunks_considered[chunknum_index]);
-				neighbourhood.push_back(current_neighbour);
-
-			}
-		}
-		// sort neighbourhood to pore distance (lambda function)
-		std::sort(neighbourhood.begin(), neighbourhood.end(), [](const std::array<float, 9> &a, const std::array<float, 9> &b) {
-			return (a[6] < b[6]);
-		});
-
-
-		/*	for (int i = 0; i < 5; ++i) {
-				std::cout << "distance to nearest point number " << i << " is = " << neighbourhood[i][6];
-			}*/
-
-
-			// this is erroneus, we need further classification before we know which one is right
-			//pathclassificationwithchunks[chunknum_next] = wrong
-			// nearest neighbours chunknumber is needed to find out pathclassification
-			// this classification is stored to freqinclasses
-			// neighbourhood[0][7] is nearest neighbours' pathclassification
-#pragma omp atomic
-		frequenciesinclasses[static_cast<size_t>(neighbourhood[0][7])] += 1;
-#pragma omp critical (pathclassification_volweight) // atomic only supports normal incrementation
-		{
-			frequenciesinclasses_volumeweighted[static_cast<int>(neighbourhood[0][7])] += static_cast<size_t>(porevec[porenum][volumecol]);
-		}
-		// now we know the nearest chunk to the pore
-		//***////***// this is enough to classify for pathlengths correlation, so do that now //***////***//
-		// increment number of pores the nearest chunk contains
-		// this vector contains the number of pores for each chunk
-
-#pragma omp atomic
-		//poreinchunkfrequencies[chunknum_next] += 1;
-		poreinchunkfrequencies[static_cast<size_t>(neighbourhood[0][8])] += 1;
-#pragma omp critical (poreinchunkfreq_volweighted) // atomic only supports normal incrementation
-		{
-			poreinchunkfrequencies_voxel_weighted[static_cast<size_t>(neighbourhood[0][8])] += static_cast<size_t>(porevec[porenum][volumecol]);
-		}
-
-		// calculate average direction of GCode in pore neighbourhood
-		// to do: weight direction with distance
-		std::array<float, 3 > neighbour_direction; neighbour_direction.fill(0);
-		for (unsigned int neighbour_index = 0; neighbour_index < nextneighbours; ++neighbour_index) {
-			for (size_t h = 0; h < 3; ++h) {
-				neighbour_direction[h] = neighbour_direction[h] + neighbourhood[neighbour_index][h+3];
-			}
-		}
-		for (int h = 0; h < 3; ++h) {
-			neighbour_direction[h] = neighbour_direction[h] / static_cast<float>(nextneighbours);
-		}
-
-		// convert GCode direction to azimuth/elevation system
-		// GCode will usually have elevation = 0°
-		// so elevation of pores cannot be correlated with GCode
-		// azimuth = 180 / pi * atan2(dy, dx);
-		// azimuth of pore is entry 11;
-		GCodeAzimuth = (180.f / static_cast<float>(PI)) * atan2(neighbour_direction[1], neighbour_direction[0]);
-
-		// azimuth should be between 0 - 180, only one sense of direction
-		if (GCodeAzimuth < 0.f) {
-			GCodeAzimuth = GCodeAzimuth + 180.f;
-		}
-		
-		// PoreAziumuth 0 - 180
-		PoreAzimuth = porevec[porenum][azimuthcol];
-		if (PoreAzimuth < 0.f) {
-			PoreAzimuth = PoreAzimuth + 180.f;
-		}
-
-
-
-		// calculate delta angle between pore and gcode
-		angledelta = abs( GCodeAzimuth - PoreAzimuth);
-		// delta should be between 0 - 90 : angles between 90 - 180 should be converted to smaller angle
-		if (angledelta > 90.f) {
-			angledelta = 180.f - angledelta;
-		}
-
-		// store delta phi (classified or do that later on?)
-		deltaangles[porenum] = std::make_tuple(angledelta, static_cast<int>(neighbourhood[0][7]), static_cast<int>(porevec[porenum][volumecol]) );
-		//std::cout << "calced delta " << angledelta << std::endl;
-
-	}
-	std::cout << "\n";
-	// now do a classification on deltaangles
-	// 1. sort vec
-	// 2. specify class width
-	// loop
-	//	3. count objects below i*class width
-	//	4. if object exceeds i*class width-> ++i (next class)
-	//	5. store in a array with 180/class width entries the number of objects for each i
-	// 6. write this to a output file as: i*class width/2 || num angles ----> histogram
-	std::cout << "klassenbreite = " << classwidth << std::endl;
-
-	//std::sort(deltaangles.begin(), deltaangles.end());
-	// sort deltaangles by angle value;
-	std::sort(deltaangles.begin(), deltaangles.end(), [](const std::tuple<float, int, int> &left, const std::tuple<float, int, int> &right) {
-		return std::get<0>(left) < std::get<0>(right);
-	});
-
-	// prepare classwidth vectors for deltaangles and pathlengthclassification
-	std::vector<std::string> classwidthvecangles;
-	std::vector<std::string> classwidthvecpathlength;
-
-	/*
-	for (int i = 0; i < 100; ++i) {
-		std::cout << deltaangles[i] << std::endl;
-	}
-*/
-	// histogram of all deltaangles = histogram
-	// histogram of deltaangles in all perims = perimhistogram
-	// histogram of deltaangles in all hatchings = hatchhistogram
-	unsigned int classnumber = 1, currentclassfrequency = 0, currentclassvolume = 0, perimcurrentclassvolume = 0, hatchingcurrentclassvolume = 0, perimclassnumber = 1, perimcurrentclassfrequency = 0, hatchclassnumber = 1, hatchcurrentclassfrequency = 0;
-	std::vector <unsigned int> histogram;
-	std::vector <unsigned int> perimhistogram;
-	std::vector <unsigned int> hatchhistogram;
-	std::vector <unsigned int> histogram_vol_in_angle;
-	std::vector <unsigned int> perimhistogram_vol_in_angle;
-	std::vector <unsigned int> hatchinghistogram_vol_in_angle;
-
-
-
-	for (unsigned int anglenum = 0; anglenum < deltaangles.size(); ++anglenum) {
-		// overall 
-		if (std::get<0>(deltaangles[anglenum]) < (static_cast<float>(classnumber)*classwidth)) {
-			++currentclassfrequency;
-			currentclassvolume += std::get<2>(deltaangles[anglenum]);
-		}
-		else if (std::get<0>(deltaangles[anglenum]) >= (static_cast<float>(classnumber)*classwidth)) {
-			histogram.push_back(currentclassfrequency);
-			histogram_vol_in_angle.push_back(currentclassvolume);
-			++classnumber;
-			currentclassfrequency = 1; // 1 was found just now
-			currentclassvolume = std::get<2>(deltaangles[anglenum]);
-		}
-		// perim
-		if ( (std::get<1>(deltaangles[anglenum]) != 0) && (std::get<0>(deltaangles[anglenum]) < (static_cast<float>(perimclassnumber)*classwidth)) ) {
-			++perimcurrentclassfrequency;
-			perimcurrentclassvolume += std::get<2>(deltaangles[anglenum]);
-		}
-		else if ( (std::get<1>(deltaangles[anglenum]) != 0) && (std::get<0>(deltaangles[anglenum]) >= (static_cast<float>(perimclassnumber)*classwidth)) ) {
-			perimhistogram.push_back(perimcurrentclassfrequency);
-			perimhistogram_vol_in_angle.push_back(perimcurrentclassvolume);
-			++perimclassnumber;
-			perimcurrentclassfrequency = 1; // 1 was found just now
-			perimcurrentclassvolume = std::get<2>(deltaangles[anglenum]);
-		}
-		// hatching
-		if ((std::get<1>(deltaangles[anglenum]) == 0) && (std::get<0>(deltaangles[anglenum]) < (static_cast<float>(hatchclassnumber)*classwidth))) {
-			++hatchcurrentclassfrequency;
-			hatchingcurrentclassvolume += std::get<2>(deltaangles[anglenum]);
-		}
-		else if ((std::get<1>(deltaangles[anglenum]) == 0) && (std::get<0>(deltaangles[anglenum]) >= (static_cast<float>(hatchclassnumber)*classwidth))) {
-			hatchhistogram.push_back(hatchcurrentclassfrequency);
-			hatchinghistogram_vol_in_angle.push_back(hatchingcurrentclassvolume);
-			++hatchclassnumber;
-			hatchcurrentclassfrequency = 1; // 1 was found just now
-			hatchingcurrentclassvolume = std::get<2>(deltaangles[anglenum]);
-		}
-	}
-	histogram.push_back(currentclassfrequency);
-	perimhistogram.push_back(perimcurrentclassfrequency);
-	hatchhistogram.push_back(hatchcurrentclassfrequency);
-	histogram_vol_in_angle.push_back(currentclassvolume);
-	hatchinghistogram_vol_in_angle.push_back(hatchingcurrentclassvolume);
-	perimhistogram_vol_in_angle.push_back(perimcurrentclassvolume);
-	std::vector<float> histogram_vol_in_mm_angle;
-	histogram_vol_in_mm_angle.resize(histogram_vol_in_angle.size());
-	
-	//std::transform(histogram_vol_in_angle.begin(), histogram_vol_in_angle.end(), histogram_vol_in_mm_angle.begin(),std::bind(std::multiplies<float>(), std::placeholders::_1, (pixelwidth[0]*pixelwidth[1]*pixelwidth[2])));
-	//for_each(histogram_vol_in_mm_angle.begin(), histogram_vol_in_mm_angle.end(), [ &pixelwidth[0]] ( float &el) {});
-
-	//auto it_vox = histogram_vol_in_angle.begin();
-	//for_each(histogram_vol_in_mm_angle.begin(), histogram_vol_in_mm_angle.end(), [&it_vox, &pixelwidth](auto &it_mm) { 
-	//	it_mm = *it_vox++;
-	//	*it_mm = it_vox*pixelwidth[0] * pixelwidth[1] * pixelwidth[2]; 
-	//});
-	
-	// normal for loop...
-	for (unsigned int index = 0; index < histogram_vol_in_mm_angle.size(); ++index) {
-		histogram_vol_in_mm_angle[index] = histogram_vol_in_angle[index] * ImageParser.pixelwidth[0] * ImageParser.pixelwidth[1] * ImageParser.pixelwidth[2];
-	}
-
-	/*
-	std::cout << "anzahl winkel " << deltaangles.size() << std::endl;
-	std::cout << "histogram size" << histogram.size() << std::endl;*/
-	std::cout << "klassenzahl = " << classnumber << std::endl;
-	
-	for (int i = 0; i < histogram.size(); ++i) {
-		std::cout << classwidth*i << " - " << classwidth*(i+1) << " : " << histogram[i] << std::endl;
-		classwidthvecangles.push_back(std::to_string(classwidth*i) + " - " + std::to_string(classwidth * (i + 1)));
-	}
-
-	//***// //***// //***// 
-	// we have a vector with the frequencies of pores for each chunk
-	// classify lengths of chunks, so that similar chunklengths go in the same class
-	//  chunk i has lengthofchunks[i]; poreinchunkfrequencies gives num of pores in them
-	// first: which chunks go in which class?
-	// number of classes = max lengthofchunks / classwidth +1
-	float pathlengthnumofclasses = (*(std::max_element(GCodeAnalyser.lengthofchunks.begin(), GCodeAnalyser.lengthofchunks.end())) / pathlengthclasswidth) + 1;
-	// stores pores per mm for each pathlengthclass
-	std::vector<float> pathlengthshisto (static_cast<size_t>(pathlengthnumofclasses), 0); 
-	// stores pores per mm for each pathlengthclass - voxel weighted
-	std::vector<float> pathlengthshisto_volumeweighted(static_cast<size_t>(pathlengthnumofclasses), 0);
-	// stores length of all chunks in the same class
-	std::vector<float> pathlengthsinclass(static_cast<size_t>(pathlengthnumofclasses), 0);
-
-
-
-	// classify chunk in a pathlength; iterate through classes and take every chunk that fits in class
-	for (unsigned int pathlengthclass = 0; pathlengthclass < pathlengthshisto.size(); ++pathlengthclass) {
-		for (unsigned int chunknumber = 0; chunknumber < GCodeAnalyser.lengthofchunks.size(); ++chunknumber) {
-			// check if this chunk fits in current class
-			if ((GCodeAnalyser.lengthofchunks[chunknumber] >= static_cast<float>(pathlengthclass)*pathlengthclasswidth) && (GCodeAnalyser.lengthofchunks[chunknumber] < static_cast<float>(pathlengthclass+1)*pathlengthclasswidth) ) {
-				// add pores to pathlengthshisto[pathlenghtsclass] and add length to pathlengthsinclass for normalising at the end
-				pathlengthshisto[pathlengthclass] += static_cast<float>(poreinchunkfrequencies[chunknumber]);
-				pathlengthsinclass[pathlengthclass] += GCodeAnalyser.lengthofchunks[chunknumber];
-				pathlengthshisto_volumeweighted[pathlengthclass] += poreinchunkfrequencies_voxel_weighted[chunknumber];
-			}
-		}
-		// finished iterating over all chunks, now normalise pores in chunk to pores per mm
-		// make sure there was at least one pore in chunk class
-		if (!arefloatsequal(pathlengthshisto[pathlengthclass], 0.f)) {
-			pathlengthshisto[pathlengthclass] = pathlengthshisto[pathlengthclass] / pathlengthsinclass[pathlengthclass];
-		}
-		// make sure there was at least one pore in chunk class
-		if (pathlengthshisto_volumeweighted[pathlengthclass] != 0) {
-			pathlengthshisto_volumeweighted[pathlengthclass] = static_cast<float>(static_cast<float>(pathlengthshisto_volumeweighted[pathlengthclass]) / pathlengthsinclass[pathlengthclass]);
-		}
-	}
-
-	// output the pores per mm as a histogram (sorted)
-	std::cout << "Histogram: pores per mm over length of the paths" << std::endl;
-	for (int i = 0; i < pathlengthshisto.size(); ++i) {
-		std::cout << pathlengthclasswidth * i << " - " << pathlengthclasswidth * (i + 1) << " : " << pathlengthshisto[i] << std::endl;
-		classwidthvecpathlength.push_back(std::to_string(pathlengthclasswidth*i) + " - " + std::to_string(pathlengthclasswidth * (i + 1)));
-
-	}
-
-
-	//***// //***// //***// 
+	//***********************************************************************
+	// OUTPUT CSV FILE
+	//***********************************************************************
 	PathBase::setCSVfilename(OutputFilename);
-	PathBase::writeCSV(argList, "list of cmd arguments", classwidthvecangles, "angle classes", histogram, "number of angles (overall)",
-		perimhistogram, "number of angles (perim only)", hatchhistogram, "number of angles (hatching only)",
-		histogram_vol_in_angle, "volume of pores per angle class (overall) (voxels)", histogram_vol_in_mm_angle, "volume of pores per angle class (overall) (mm^3)",
-		perimhistogram_vol_in_angle, "volume of pores per angle class (perim) (voxels)", hatchinghistogram_vol_in_angle, "volume of pores per angle class (hatching) (voxels)",
-		classwidthvecpathlength, "path length classes", pathlengthshisto, "pores per mm", pathlengthshisto_volumeweighted, "defect volume of pores per mm", frequenciesinclasses, "number of pores in path class", frequenciesinclasses_volumeweighted, "defect volume in path class",
-		poresinlayer, "number of pores per layer", porevolumeinlayer, "overall volume of pores in layer", poreparser.poreorientationhisto_azim_overall, "Azimuth histogram of all pores from file -as is",
+	PathBase::writeCSV(argList, "list of cmd arguments", Correlator.classwidthvecangles, "angle classes", Correlator.PoretoPathAngle_Histo, "number of angles (overall)",
+		Correlator.PoretoPathAngle_Histo_Perim, "number of angles (perim only)", Correlator.PoretoPathAngle_Histo_Hatching, "number of angles (hatching only)",
+		Correlator.PoretoPathAngle_Histo_VW, "volume of pores per angle class (overall) (voxels)", Correlator.PoretoPathAngle_Histo_VW_cmm, "volume of pores per angle class (overall) (mm^3)",
+		Correlator.PoretoPathAngle_Histo_Perim_VW, "volume of pores per angle class (perim) (voxels)", Correlator.PoretoPathAngle_Histo_Hatching_VW, "volume of pores per angle class (hatching) (voxels)",
+		Correlator.classwidthvecpathlength, "path length classes", Correlator.PoresperPathlength_Histo, "pores per mm", Correlator.PoresperPathlength_Histo_VW, "defect volume of pores per mm", Correlator.PoreinClassFrequencies, "number of pores in path class", Correlator.PoreinClassFrequencies_VW, "defect volume in path class",
+		Correlator.PoreinLayerFrequencies, "number of pores per layer", Correlator.PoreinLayerFrequencies_VW, "overall volume of pores in layer", poreparser.poreorientationhisto_azim_overall, "Azimuth histogram of all pores from file -as is",
 		poreparser.poreorientationhisto_azim_filtered, "Azimuth histogram of pores from file filtered with rules", poreparser.poreorientationhisto_elev_overall, "Elevation histogram of all pores from file -as is",
 		poreparser.poreorientationhisto_elev_filtered, "Elevation histogram of pores from file filtered with rules", poreparser.poreazimuth_histo_overall_volume, "Azimuth histogram of all pores from file -as is - volume weighted",
 		poreparser.poreazimuth_histo_filtered_volume, "Azimuth histogram of pores from file filtered with rules - volume weighted", poreparser.poreelevation_histo_overall_volume, "Elevation histogram of all pores from file -as is - volume weighted",

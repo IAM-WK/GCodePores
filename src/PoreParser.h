@@ -11,6 +11,12 @@ class PoreParser
 
 public:
 
+	// number of colums in morpholibj output
+	// #3 is sphericity
+	static const unsigned int dimtuple = 26;
+	typedef std::array<std::string, PoreParser::dimtuple> PoreInfoHeaderType;
+	typedef std::array<float, PoreParser::dimtuple> PoreTupleType;
+	typedef std::vector<PoreTupleType> PoreVecType;
 
 	// this constructor generates a parser
 	PoreParser();
@@ -45,13 +51,11 @@ public:
 
 
 private:
-	// number of colums in morpholibj output
-	// #3 is sphericity
-	static const unsigned int dimtuple = 26;
+
 	// list read from file
-	std::vector< std::array<float, PoreParser::dimtuple>> porelist;
+	PoreVecType porelist;
 	// header from porefile
-	std::array<std::string, PoreParser::dimtuple> tupleheader;
+	PoreInfoHeaderType tupleheader;
 
 	std::string porefilename;
 	// sphericity threshold to sort out pores above
