@@ -5,25 +5,25 @@ GCodeTransform::GCodeTransform()
 {
 }
 
-void GCodeTransform::setOrigin(const std::vector<float>& ImageOriginVal)
+void GCodeTransform::setOrigin(const std::vector<float>& ImageOriginVal) noexcept
 {
 	this->ImageOrigin = ImageOriginVal;
 }
 
-void GCodeTransform::setAngles(const float & ImageAngleGammaVal, const float & ImageAngleBetaVal, const float & ImageAngleAlphaVal)
+void GCodeTransform::setAngles(const float & ImageAngleGammaVal, const float & ImageAngleBetaVal, const float & ImageAngleAlphaVal) noexcept
 {
 	this->ImageAngleGamma = ImageAngleGammaVal;
 	this->ImageAngleBeta = ImageAngleBetaVal;
 	this->ImageAngleAlpha = ImageAngleAlphaVal;
 }
 
-void GCodeTransform::setImagedimensions(const float & y_image_lengthVal, const float & z_image_lengthVal)
+void GCodeTransform::setImagedimensions(const float & y_image_lengthVal, const float & z_image_lengthVal) noexcept
 {
 	this->y_image_length = y_image_lengthVal;
 	this->z_image_length = z_image_lengthVal;
 }
 
-void GCodeTransform::setInput(const PathBase::PathVector &GCodeVector)
+void GCodeTransform::setInput(const PathBase::PathVector &GCodeVector) noexcept
 {
 	this->ImageCoordinateGCode = GCodeVector; // copy values to new vector
 }
@@ -129,15 +129,23 @@ void GCodeTransform::Execute()
 			//std::cout << " -- X: " << pathitem[i][0] << " -- Y: " << pathitem[i][1] << " -- Z: " << pathitem[i][2] << " -- disttonext " << pathitem[i][6] << std::endl;
 		}
 	}
-	for (std::size_t i = 0; i < this->ImageCoordinateGCode.size() - 1; ++i) { // update last elements
-		dx = this->ImageCoordinateGCode[i + 1][0][0] - this->ImageCoordinateGCode[i].back()[0];
-		dy = this->ImageCoordinateGCode[i + 1][0][1] - this->ImageCoordinateGCode[i].back()[1];
-		dz = this->ImageCoordinateGCode[i + 1][0][2] - this->ImageCoordinateGCode[i].back()[2];
-		disttonext = sqrt(dx * dx + dy * dy + dz * dz);
-		dx = dx / disttonext; dy = dy / disttonext; dz = dz / disttonext; //norm direction
-		this->ImageCoordinateGCode[i].back()[3] = dx; this->ImageCoordinateGCode[i].back()[4] = dy; this->ImageCoordinateGCode[i].back()[5] = dz; this->ImageCoordinateGCode[i].back()[6] = disttonext;
-
+	for (std::size_t i = 0; i < this->ImageCoordinateGCode.size(); ++i) { // update last elements
+		if (this->ImageCoordinateGCode[i].size() >= 2) {
+			dx = this->ImageCoordinateGCode[i][this->ImageCoordinateGCode[i].size() - 2][3];
+			dy = this->ImageCoordinateGCode[i][this->ImageCoordinateGCode[i].size() - 2][4]; //caution with double travels !!!!!!
+			dz = this->ImageCoordinateGCode[i][this->ImageCoordinateGCode[i].size() - 2][5];
+		}
+		else { // take last direction of -1 -1 -1 as fallback ----> Todo!
+			dx = -1;
+			dy = -1;
+			dz = -1;
+		}
+		// disttonext is 0 by definition
+		this->ImageCoordinateGCode[i].back()[3] = dx; this->ImageCoordinateGCode[i].back()[4] = dy; this->ImageCoordinateGCode[i].back()[5] = dz; this->ImageCoordinateGCode[i].back()[6] = 0;
 	}
+
+
+
 	return;
 }
 

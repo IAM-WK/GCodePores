@@ -16,10 +16,10 @@ public:
 	GCodeTransform(); //CTOR
 	
 	// transform origin of GCode to origin of printing in CT Data, eg transform vector + rotation
-	void setOrigin(const std::vector<float> &ImageOriginVal);
-	void setAngles(const float &ImageAngleGammaVal, const float &ImageAngleBetaVal, const float &ImageAngleAlphaVal);
-	void setImagedimensions(const float &y_image_lengthVal, const float &z_image_lengthVal);
-	void setInput(const PathVector &GCodeVector);
+	void setOrigin(const std::vector<float> &ImageOriginVal) noexcept;
+	void setAngles(const float &ImageAngleGammaVal, const float &ImageAngleBetaVal, const float &ImageAngleAlphaVal) noexcept;
+	void setImagedimensions(const float &y_image_lengthVal, const float &z_image_lengthVal) noexcept;
+	void setInput(const PathVector &GCodeVector) noexcept;
 	void Execute();
 	
 	// returns CoordinateVector: ImageCoordinateGCode --> this will return empty vec if badly called

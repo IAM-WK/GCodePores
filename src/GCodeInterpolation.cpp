@@ -21,10 +21,9 @@ void GCodeInterpolation::setInput(const PathVector &GCodeVector)
 
 void GCodeInterpolation::Execute()
 {
-	//std::vector< std::vector< std::array<float, dim_coords> > > normpath; //stores coordinates with normalised distance
-	std::vector< std::vector< std::array<float, dim_coords> > >::const_iterator CChunkIt;//to iterate through coordinate chunks between travels
+	std::vector< std::vector< std::array<float, dim_coords> > >::const_iterator CChunkIt; // to iterate through coordinate chunks between travels
 	std::vector< std::array<float, dim_coords> >::const_iterator CCoordIt;
-	//normpath.push_back({ this->ImageCoordinateGCode[0][0] }); //start with first entry, same origin
+
 	float searchdistance = 0; //distance to next generated point from next point in GCodeCoordinateVector
 	this->carry_distance = 0;
 	for (CChunkIt = this->GCodeVec.begin(); CChunkIt != this->GCodeVec.end(); ++CChunkIt) {
@@ -44,7 +43,6 @@ void GCodeInterpolation::Execute()
 				//remember carry distance
 			}
 		}
-
 	}
 		return;
 } 
@@ -63,11 +61,16 @@ void GCodeInterpolation::interpolatepath(ChunkVector::const_iterator &CCoordIt, 
 		newpathpoint[j] = CCoordIt->at(j) + searchdistance * CCoordIt->at(j + 3);
 		newpathpoint[j + 3] = CCoordIt->at(j + 3);
 	}
+	//std::cout << "CCoordIt->at(8);" << CCoordIt->at(8) << std::endl;
 	newpathpoint[6] = this->distance;
 	newpathpoint[7] = CCoordIt->at(7);
+	newpathpoint[8] = CCoordIt->at(8);
+	newpathpoint[9] = CCoordIt->at(9);
 	if (CCoordIt == CChunkIt->begin()) { //printer has just travelled
 		newpathpoint[7] = (++CCoordIt)->at(7); // increment allowed because checked above if we are at the end
-		(--CCoordIt); // decrement to be correct again, use next feedrate, because feedrate is from trave move after travel otherwise
+		newpathpoint[8] = CCoordIt->at(8); // update BED and power values from coordinate at next point
+		newpathpoint[9] = CCoordIt->at(9);
+		(--CCoordIt); // decrement to be correct again, use next feedrate, because feedrate is from travel move after travel otherwise
 		this->NormalisedGCode.push_back({ newpathpoint }); //store point in a new chunk
 	}
 	else {
@@ -85,8 +88,12 @@ void GCodeInterpolation::interpolatepath(ChunkVector::const_iterator &CCoordIt, 
 		}
 		newpathpoint[6] = this->distance;
 		newpathpoint[7] = CCoordIt->at(7);
+		newpathpoint[8] = CCoordIt->at(8);
+		newpathpoint[9] = CCoordIt->at(9);
 		if (CCoordIt == CChunkIt->begin()) { //printer has just travelled
 			newpathpoint[7] = (++CCoordIt)->at(7); // increment allowed because checked above if we are at the end
+			newpathpoint[8] = CCoordIt->at(8); // update BED and power values from coordinate at next point
+			newpathpoint[9] = CCoordIt->at(9);
 			(--CCoordIt); // decrement to be correct again, use next feedrate, because feedrate is from trave move after travel otherwise
 		}
 		this->NormalisedGCode.back().push_back(newpathpoint); //store points

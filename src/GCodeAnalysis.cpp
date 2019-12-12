@@ -1,8 +1,13 @@
 #include "GCodeAnalysis.h"
 
-void GCodeAnalysis::setvtkfilename(const std::string & vtkfilenamearg)
+void GCodeAnalysis::setvtkfilename(const std::string & vtkfilenamearg) noexcept
 {
 	this->vtkfilename = vtkfilenamearg;
+}
+
+void GCodeAnalysis::setslmcompatmode(const bool& slmcompatibility) noexcept
+{
+	this->slmcompat = slmcompatibility;
 }
 
 
@@ -96,7 +101,6 @@ void GCodeAnalysis::classifypoints(const PathBase::PathVector & PathVec, const f
 	// usw. (muss noch umformuliert werden)
 	// if abs(startpoint-endpoint) < tol_loopclosure -> perimeter
 	// maybe addionally check if direction changes significantly over chunklength 
-	// freeformer infill seems to be straight lines only
 
 	// define helper variables
 	float loopclosure_x = 0, loopclosure_y = 0, loopclosure_z = 0, loopclosure_ges;
@@ -134,7 +138,6 @@ void GCodeAnalysis::classifypoints(const PathBase::PathVector & PathVec, const f
 		if (loopclosure_ges < tol_loopclosure && directionchanges) {
 			// startpoint and endpoint are closer than tolerance
 			// --> detected perim --> set to perimeter class
-			// **** Todo: check if direction changes in this chunk. if not --> hatching
 			for (std::size_t j = 0; j < PathVec[i].size(); ++j) {
 				this->pathclassification.push_back(1);
 			}
@@ -157,15 +160,6 @@ void GCodeAnalysis::classifypoints(const PathBase::PathVector & PathVec, const f
 		// k iterates chunks
 		float maxcoord = 0;
 		for (std::size_t n = 0; n < PathVec[k].size(); ++n) {
-			/*if (abs(PathVec[k][n][0]) > maxcoord) {
-				maxcoord = abs(PathVec[k][n][0]);
-			}
-			if (abs(PathVec[k][n][1]) > maxcoord) {
-				maxcoord = abs(PathVec[k][n][1]);
-			}*/
-			/*if (sqrt(abs(PathVec[k][n][0])*abs(PathVec[k][n][0])+ abs(PathVec[k][n][1])*abs(PathVec[k][n][1])) > maxcoord) {
-				maxcoord = sqrt(abs(PathVec[k][n][0])*abs(PathVec[k][n][0]) + abs(PathVec[k][n][1])*abs(PathVec[k][n][1]));
-			}*/
 			// This methods have their problems with more than one structure ....
 			// TODO: implement something like giftwrapping 
 			if (abs(PathVec[k][n][0]) > maxcoord) {
@@ -189,6 +183,8 @@ void GCodeAnalysis::classifypoints(const PathBase::PathVector & PathVec, const f
 		}		
 	}
 
+	// set pathclassificationwithchunks to the size of all chunks
+	this->pathclassificationwithchunks.resize(PathVec.size());
 	// now we need to sort every inner vector in layered_chunks after maxcoords
 	// index order = perim order, sparing zeros in maxcoord(=hatching)
 	for (std::size_t layernum = 0; layernum < layered_chunks.size(); ++layernum) {
@@ -203,49 +199,70 @@ void GCodeAnalysis::classifypoints(const PathBase::PathVector & PathVec, const f
 			for (size_t chunkindex = 0; chunkindex < layered_chunks[layernum][chunknum].second; ++chunkindex) {
 				point_index += PathVec[chunkindex].size();
 			}
+			--point_index; // because of size from first entry, count is 1 too high each time
 			for (size_t point_in_chunk = 0; point_in_chunk < PathVec[layered_chunks[layernum][chunknum].second].size(); ++point_in_chunk) {
 				if (this->pathclassification[point_index] != 0) { // operate only in perims
 					this->pathclassification[point_index] = perim_number;
-					// den chunk muss man jetzt wieder in punkte rueckuebersetzen
-					// und dann auch wirklichen allen punkten die perim number zuweisen
 				}
 				++point_index;
 			}
-			this->pathclassificationwithchunks.push_back(this->pathclassification[point_index-1]);
+			//this->pathclassificationwithchunks.push_back(this->pathclassification[point_index-1]);
+			if (this->pathclassification[(point_index - 1)] != 0) {
+				this->pathclassificationwithchunks[layered_chunks[layernum][chunknum].second] = perim_number;
+			}
+			else {
+				this->pathclassificationwithchunks[layered_chunks[layernum][chunknum].second] = 0;
+			}
 			++perim_number;
 		}
 	}
-	
 	//// write to vtkfile
 	//std::cout << "writing pathclassifications to vtk file!\n";
 	//PathBase::outputcontourvtkfile(this->pathclassification, this->vtkfilename, "pathclassification");
 }
 
-void GCodeAnalysis::findfeedrate(const PathBase::PathVector& PathVec)
+void GCodeAnalysis::findfeedrate(const PathBase::PathVector& PathVec) noexcept
 {
-	for (unsigned int i = 0; i < PathVec.size(); ++i) {
-		for (unsigned int j = 0; j < PathVec[i].size(); ++j) {
+	for (size_t i = 0; i < PathVec.size(); ++i) {
+		for (size_t j = 0; j < PathVec[i].size(); ++j) {
 			feedrate.push_back(PathVec[i][j][7]);
+		}
+	}
+}
+
+void GCodeAnalysis::findBED(const PathBase::PathVector& PathVec) noexcept
+{
+	for (size_t i = 0; i < PathVec.size(); ++i) {
+		for (size_t j = 0; j < PathVec[i].size(); ++j) {
+			beamexpanderdiameter.push_back(PathVec[i][j][8]);
+		}
+	}
+}
+
+void GCodeAnalysis::findlaserpower(const PathBase::PathVector& PathVec) noexcept
+{
+	for (size_t i = 0; i < PathVec.size(); ++i) {
+		for (size_t j = 0; j < PathVec[i].size(); ++j) {
+			laserpower.push_back(PathVec[i][j][9]);
 		}
 	}
 }
 
 void GCodeAnalysis::calcpathlength(const PathBase::PathVector & PathVec)
 {
-	
 
 	// calc length of every chunk
-	for (unsigned int i = 0; i < PathVec.size(); ++i) {
+	for (size_t i = 0; i < PathVec.size(); ++i) {
 		float currentlengthofpath = 0;
-		for (unsigned int j = 0; j < PathVec[i].size(); ++j) {
+		for (size_t j = 0; j < PathVec[i].size(); ++j) {
 			currentlengthofpath += PathVec[i][j][6];
 		}
 		lengthofchunks.push_back(currentlengthofpath);
 	}
 
 	// store length of chunk to every point in PathVec
-	for (unsigned int i = 0; i < PathVec.size(); ++i) {
-		for (unsigned int j = 0; j < PathVec[i].size(); ++j) {
+	for (size_t i = 0; i < PathVec.size(); ++i) {
+		for (size_t j = 0; j < PathVec[i].size(); ++j) {
 			lengthofchunks_points.push_back(lengthofchunks[i]);
 		}
 	}
@@ -255,7 +272,97 @@ void GCodeAnalysis::calcpathlength(const PathBase::PathVector & PathVec)
 	//PathBase::outputcontourvtkfile(this->chunklengths, this->vtkfilename, "pathlengths");
 }
 
-void GCodeAnalysis::setlayerheighttol(const float &layer_height_tol_val)
+void GCodeAnalysis::calchatchdistance(const PathBase::PathVector& PathVec)
+{
+	constexpr float directionaltolerance = 0.01f; // 10mue
+	// synopsis:
+	// calculate direction of current line
+	// if current line == first line
+	//	olddirection = currentdirection + continue and set distancetolast to -1
+	// check if olddirection == currentdirection, else set distancetolast to -1 + continue
+
+	// TODO: output warning: only seperated hatching is supported!
+	if (this->pathclassificationwithchunks.size() == 0) {
+		std::cerr << "Print paths have to be classified before calculating hatch distance!" << std::endl;
+	}
+	std::array<double, 3> currentdirection = { 0.f,0.f,0.f }, olddirection = { 0.f,0.f,0.f }, pointonlastline = { 0.f,0.f,0.f }, pointoncurrentline = { 0.f,0.f,0.f }, vectorarea = { 0.f,0.f,0.f };
+	double lengthofdirectionvec = 0;
+
+	for (size_t i = 0; i < PathVec.size(); ++i) {
+		currentdirection = { 0.f,0.f,0.f };
+		vectorarea = { 0.f,0.f,0.f };
+		pointoncurrentline = { PathVec[i][0][0],PathVec[i][0][1],PathVec[i][0][2] };
+		for (size_t j = 0; j < PathVec[i].size(); ++j) {
+			currentdirection[0] += PathVec[i][j][3];
+			currentdirection[1] += PathVec[i][j][4];
+			currentdirection[2] += PathVec[i][j][5];
+		}
+		// normed direction
+		lengthofdirectionvec = sqrt(currentdirection[0] * currentdirection[0] + currentdirection[1] * currentdirection[1] + currentdirection[2] * currentdirection[2]);
+		currentdirection[0] = currentdirection[0] / lengthofdirectionvec;
+		currentdirection[1] = currentdirection[1] / lengthofdirectionvec;
+		currentdirection[2] = currentdirection[2] / lengthofdirectionvec;
+		
+		// check if next line is a neighbour or is just the next segment of the same line
+		// if next segment: 
+		//	set dist to value code for seg + continue -10
+		// when found neighbour:
+		//	calculate HD and write HD to list of segments 
+
+		if (this->pathclassificationwithchunks.at(i) != 0) { 
+			// -20 = contour path
+			hatchdistance.push_back(static_cast<float>(this->pathclassificationwithchunks.at(i)));
+			continue;
+		}
+		else if (i == 0) {
+			olddirection = currentdirection;
+			pointonlastline = pointoncurrentline;
+			hatchdistance.push_back(-1.f);
+			continue;
+		}
+		// is point on line?
+		else if (arefloatsequal(static_cast<float>((pointonlastline[0] - pointoncurrentline[0]) / olddirection[0]), static_cast<float>((pointonlastline[1] - pointoncurrentline[1]) / olddirection[1]), directionaltolerance) && arefloatsequal(static_cast<float>((pointonlastline[0] - pointoncurrentline[0]) / olddirection[0]), static_cast<float>((pointonlastline[2] - pointoncurrentline[2]) / olddirection[2]), directionaltolerance)) {
+			// -10 is code for: use dist of last line
+			std::cout << "hdufh" << std::endl;
+			hatchdistance.push_back(-10.f);
+			continue;
+		}
+		else if (!arefloatsequal(static_cast<float>(olddirection[0]), static_cast<float>(currentdirection[0]), directionaltolerance) && !arefloatsequal(static_cast<float>(olddirection[1]), static_cast<float>(currentdirection[1]), directionaltolerance) && !arefloatsequal(static_cast<float>(olddirection[2]), static_cast<float>(currentdirection[2]), directionaltolerance)) {
+		// non parallel lines detected!
+			olddirection = currentdirection;
+			pointonlastline = pointoncurrentline;
+			hatchdistance.push_back(-30.f);
+			continue;
+		}
+		else {
+			vectorarea = crossproduct(currentdirection, { pointoncurrentline[0] - pointonlastline[0], pointoncurrentline[1] - pointonlastline[1], pointoncurrentline[2] - pointonlastline[2] });
+			hatchdistance.push_back(static_cast<float>(sqrt(vectorarea[0] * vectorarea[0] + vectorarea[1] * vectorarea[1] + vectorarea[2] * vectorarea[2])));
+		}
+		
+		// set old direction and point on this line
+		olddirection = currentdirection;
+		pointonlastline = pointoncurrentline;
+	}
+
+	for (size_t i = PathVec.size(); i >= 1; --i) {
+		// set segments to value of all
+		if (arefloatsequal(hatchdistance[i - 1], -10.f) && hatchdistance.size() != 1) {
+			hatchdistance[i - 1] = hatchdistance[i];
+		}
+		// store distancevalue of chunk to every point in PathVec
+		for (size_t j = 0; j < PathVec[i - 1].size(); ++j) {
+			if (!slmcompat) {
+				hatchdistance_points.push_back(0.f);
+			}
+			else {
+				hatchdistance_points.push_back(hatchdistance[i - 1]);
+			}
+		}
+	}
+
+}
+
+void GCodeAnalysis::setlayerheighttol(const float &layer_height_tol_val) noexcept
 {
 	this->layer_height_tol = layer_height_tol_val;
 }
@@ -284,7 +391,7 @@ void GCodeAnalysis::calclayerheights(const PathBase::PathVector& PathVec)
 }
 
 
-bool GCodeAnalysis::paircomparator(const std::pair<float, size_t> &l, const std::pair<float, size_t> &r)
+bool GCodeAnalysis::paircomparator(const std::pair<float, size_t> &l, const std::pair<float, size_t> &r) noexcept
 {
 	return (l.first > r.first);
 }

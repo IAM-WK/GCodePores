@@ -13,8 +13,8 @@ class PathBase
 {
 public:
 
-	//X;Y;Z,dx,dy,dz,disttonext,feedrate
-	static constexpr uint32_t dim_coords = 8;
+	//X;Y;Z,dx,dy,dz,disttonext,feedrate, BEDvalue, laserpowervalue
+	static constexpr uint32_t dim_coords = 10;
 
 
 	typedef std::vector< std::vector< std::array< float, dim_coords > > > PathVector;
@@ -127,20 +127,24 @@ public:
 
 	
 	// worker process that outputs data
-	static void writerWorker(const PathBase::PathVector &pathVec, const std::string &vtkfilename, const std::vector<std::string> &arglist, const std::vector<int> &pathclassification, const std::vector<float> &chunklength, const std::vector<float> &feedrate) {
+	static void writerWorker(const PathBase::PathVector &pathVec, const std::string &vtkfilename, const std::vector<std::string> &arglist, const std::vector<int> &pathclassification, const std::vector<float> &chunklength, const std::vector<float> &feedrate, const std::vector<float> &beamexpanderdiameter, const std::vector<float> &laserpower, const std::vector<float> &hatchdistance) {
 		std::cout << "writing vtk file!\n";
 		PathBase::outputvtkfile(pathVec, vtkfilename, arglist);
 		std::cout << "writing feedrate to vtk file!\n";
 		PathBase::outputcontourvtkfile(feedrate, vtkfilename, "feedrate");
+		std::cout << "writing beamexpandervalues to vtk file!\n";
+		PathBase::outputcontourvtkfile(beamexpanderdiameter, vtkfilename, "beamexpander");
+		std::cout << "writing laserpower to vtk file!\n";
+		PathBase::outputcontourvtkfile(laserpower, vtkfilename, "laserpower");
 		std::cout << "writing pathclassifications to vtk file!\n";
 		PathBase::outputcontourvtkfile(pathclassification, vtkfilename, "pathclassification");
 		std::cout << "writing pathlengths to vtk file!\n";
 		PathBase::outputcontourvtkfile(chunklength, vtkfilename, "pathlengths");
-
+		std::cout << "writing hatchdistance to vtk file!\n";
+		PathBase::outputcontourvtkfile(hatchdistance, vtkfilename, "hatchdistance");
 	}
 
-
-
+	
 
 	// ensure PathBase stays virtual...
 	virtual ~PathBase() = 0;

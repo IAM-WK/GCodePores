@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <algorithm>
+#include <limits>
 #include "PathBase.h"
 #include "PoreParser.h"
 #include "helperfunctions.h"
@@ -68,17 +69,17 @@ private:
 	// vec with lengths of all chunks
 	std::vector<float>* LengthofChunks = 0;
 
-	unsigned int XCol;
-	unsigned int YCol;
-	unsigned int ZCol;
-	unsigned int AzimuthCol;
-	unsigned int VolumeCol;
-	float LayerHeightTol;
-	unsigned int LayersConsidered;
-	unsigned int NextNeighbours;
-	float ClassWidth;
-	float PathLengthClassWidth;
-	double PixelVolume;
+	unsigned int XCol = std::numeric_limits<unsigned int>::max();
+	unsigned int YCol = std::numeric_limits<unsigned int>::max();
+	unsigned int ZCol = std::numeric_limits<unsigned int>::max();
+	unsigned int AzimuthCol = std::numeric_limits<unsigned int>::max();;
+	unsigned int VolumeCol = std::numeric_limits<unsigned int>::max();;
+	float LayerHeightTol = std::numeric_limits<float>::min();
+	unsigned int LayersConsidered = std::numeric_limits<unsigned int>::max();;
+	unsigned int NextNeighbours = std::numeric_limits<unsigned int>::max();;
+	float ClassWidth = std::numeric_limits<float>::min();
+	float PathLengthClassWidth = std::numeric_limits<float>::min();
+	double PixelVolume = std::numeric_limits<double>::min();
 
 	// stores length of all chunks in the same class
 	std::vector<float> pathlengthsinclass;

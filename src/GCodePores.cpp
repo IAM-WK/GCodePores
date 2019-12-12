@@ -206,9 +206,9 @@ int main(int argc, char *argv[])
 	//************************* interpolate GCode ***************************
 	GCodeInterpolation GCodeInterpolator;
 	GCodeInterpolator.setDistance(interpolationdist);
-	GCodeInterpolator.setInput(GCodeTransformer.GetOutput());
 	PathBase::PathVector pathVec; // to store Vector with points, PathVector is typedefd in the virtual base class PathBase
 	if (!interpolationoff) {
+		GCodeInterpolator.setInput(GCodeTransformer.GetOutput());
 		GCodeInterpolator.Execute(); //
 		pathVec = GCodeInterpolator.GetOutput(); // use enum 
 	}
@@ -231,17 +231,21 @@ int main(int argc, char *argv[])
 
 	GCodeAnalysis GCodeAnalyser;
 	GCodeAnalyser.setvtkfilename(vtkfilename);
+	GCodeAnalyser.setslmcompatmode(slmcompat);
 	//GCodeAnalyser.calcdeltaangle(pathVec, true, true, 0.4f); // calc angles at points and create vtk colorfield, degree, filter, filterlength
 	float extr_width = 0.f, l_hgt = 0.f;
 	PathParser.getGCodeparams(extr_width, l_hgt);
-	if (slmcompat) { extr_width = 0.125f; } //todo: estimate from GCode
+	if (slmcompat) { extr_width = 0.25f; } //todo: estimate from GCode
 	else if (arefloatsequal(extr_width, 0.f)) { extr_width = 0.45f; };
 	GCodeAnalyser.classifypoints(pathVec, 0.5f*extr_width); // maybe a bit too conservative to use width as tolerance...
 	GCodeAnalyser.calcpathlength(pathVec);
+	GCodeAnalyser.calchatchdistance(pathVec);
 	constexpr float layer_height_tol = 0.001f; // 1 mue tolerance
 	GCodeAnalyser.setlayerheighttol(layer_height_tol);
 	GCodeAnalyser.calclayerheights(pathVec);
 	GCodeAnalyser.findfeedrate(pathVec);
+	GCodeAnalyser.findBED(pathVec);
+	GCodeAnalyser.findlaserpower(pathVec);
 
 	const double wall_analysis = get_wall_time();
 	std::cout << "Path analysis finished! Time needed = " << std::to_string(wall_analysis - wall_interpol) << "\n";
@@ -262,7 +266,7 @@ int main(int argc, char *argv[])
 	// async launches the worker which writes the fields to the vtk file
 	std::future<void> writework;
 	if (!vtkoutputoff) {
-		writework = std::async(std::launch::async, PathBase::writerWorker, pathVec, vtkfilename, argList, GCodeAnalyser.pathclassification, GCodeAnalyser.lengthofchunks_points, GCodeAnalyser.feedrate);
+		writework = std::async(std::launch::async, PathBase::writerWorker, pathVec, vtkfilename, argList, GCodeAnalyser.pathclassification, GCodeAnalyser.lengthofchunks_points, GCodeAnalyser.feedrate, GCodeAnalyser.beamexpanderdiameter, GCodeAnalyser.laserpower, GCodeAnalyser.hatchdistance_points);
 	}
 	if (vtkfileonly) {
 		if (!vtkoutputoff) {

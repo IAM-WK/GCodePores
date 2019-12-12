@@ -6,10 +6,13 @@
 
 
 // this function helps compare two floats considering numerical noise
-bool arefloatsequal(const float &A, const float &B, const float &maxRelDiff = FLT_EPSILON);
+bool arefloatsequal(const float &A, const float &B, const float &maxRelDiff = FLT_EPSILON) noexcept;
 
 // calculate acos with clamped values at +-1
-float clamped_acos(const float &value);
+float clamped_acos(const float &value) noexcept;
+
+// calculate cross product of two arrays
+std::array<double,3> crossproduct(const std::array<double,3> &v1, const std::array<double, 3> &v2) noexcept;
 
 ////*************** generate progress information **************
 void progressbar(const size_t &progresscounter, const size_t &sizeporevec);

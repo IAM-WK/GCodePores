@@ -16,13 +16,13 @@ class GCodeParser: public PathBase
 public:
 
 	// this constructor generates a parser
-	GCodeParser();
+	GCodeParser() noexcept;
 
-	void setFilename(const std::string &Filename);
-	void setSkirtoffset(const size_t &skirtoffsetval);
+	void setFilename(const std::string &Filename) noexcept;
+	void setSkirtoffset(const size_t &skirtoffsetval) noexcept;
 	// setBoundarystrings will only use a nonempty startstring, if you want to use startbyskirt give empty string
-	void setBoundarystrings(const std::string &startstringval, const std::string &endstringval);
-	void setCompatibility(const bool &freeformcompatval, const bool &slmcompatval);
+	void setBoundarystrings(const std::string &startstringval, const std::string &endstringval) noexcept;
+	void setCompatibility(const bool &freeformcompatval, const bool &slmcompatval) noexcept;
 	void Execute();
 	
 	// returns CoordinateVector

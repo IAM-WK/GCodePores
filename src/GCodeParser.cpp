@@ -1,22 +1,22 @@
 #include "GCodeParser.h"
 
 
-GCodeParser::GCodeParser() 
+GCodeParser::GCodeParser() noexcept
 {
 	// set some defaults?
 }
 
-void GCodeParser::setFilename(const std::string & Filename)
+void GCodeParser::setFilename(const std::string & Filename) noexcept
 {
 	this->GCodeFilename = Filename;
 }
 
-void GCodeParser::setSkirtoffset(const size_t & skirtoffsetval)
+void GCodeParser::setSkirtoffset(const size_t & skirtoffsetval) noexcept
 {
 	this->skirtoffset = skirtoffsetval;
 }
 
-void GCodeParser::setBoundarystrings(const std::string & startstringval, const std::string & endstringval)
+void GCodeParser::setBoundarystrings(const std::string & startstringval, const std::string & endstringval) noexcept
 {
 	this->startstring = startstringval;
 	this->endstring = endstringval;
@@ -25,7 +25,7 @@ void GCodeParser::setBoundarystrings(const std::string & startstringval, const s
 	}
 }
 
-void GCodeParser::setCompatibility(const bool & freeformcompatval, const bool &slmcompatval)
+void GCodeParser::setCompatibility(const bool & freeformcompatval, const bool &slmcompatval) noexcept
 {
 	this->freeformcompat = freeformcompatval;
 	this->slmcompat = slmcompatval;
@@ -77,7 +77,7 @@ void GCodeParser::readinfos(std::ifstream &GCodeFile, std::string &line_string, 
 void GCodeParser::Execute(){
 	
 	//** define helper strings to parse GCode file. Definition of strings should depend on GCode flavour
-	std::string comment, extrude, drive, drivetrav, feedratemask;
+	std::string comment, extrude, drive, drivetrav, feedratemask, BEDmask, powermask;
 	if (!(this->freeformcompat) && !(this->slmcompat)) { // search patterns for slic3r, simplify3d....
 		comment = ";", extrude = "E", drive = "G1", drivetrav = "G0", feedratemask = "F";
 	}
@@ -85,7 +85,7 @@ void GCodeParser::Execute(){
 		comment = "//", extrude = "M", drive = "G01", drivetrav = "G00", feedratemask = "F";
 	}
 	else { // use search patterns for ORLAS slicer
-		comment = "<", extrude = "M45", drive = "G01", drivetrav = "G0", feedratemask = "F";
+		comment = "<", extrude = "M45", drive = "G01", drivetrav = "G0", feedratemask = "F", BEDmask = "G607", powermask = "G600";
 		// new: M45 is persistent until M46 is reached x
 		// G01 is denoted after Nxxxxx
 		// startstring <Code> endstring </Code> (+tabs)
@@ -110,10 +110,11 @@ void GCodeParser::Execute(){
 	std::string line_string;
 	const std::string coordchars = "0123456789.+-"; //allowed characters in a coordinate specification // +- for robustness
 
-	float xcoord, ycoord, zcoord, dx, dy, dz, disttonext, feedrate = 0;
+	float xcoord, ycoord, zcoord, dx, dy, dz, disttonext, feedrate = 0, beamexpandervalue = 0, laserpowervalue = 0;
 	bool firstlines = true; // true while skipping lines before object
 	bool isatravel = true; // printing head does not extrude during this movement
-	size_t travelcount = 0, xpos = std::string::npos, ypos = std::string::npos, zpos = std::string::npos, extrudepos = std::string::npos, commentpos = std::string::npos, feedratepos = std::string::npos, slmnpos = std::string::npos, endslmnpos = std::string::npos;
+	bool startednewchunk = false; // movement before this one was a travel move
+	size_t travelcount = 0, xpos = std::string::npos, ypos = std::string::npos, zpos = std::string::npos, extrudepos = std::string::npos, commentpos = std::string::npos, feedratepos = std::string::npos, beamexpanderpos = std::string::npos, powerpos = std::string::npos, slmnpos = std::string::npos, endslmnpos = std::string::npos;
 	std::array<float, dim_coords> origin; origin.fill(0);
 
 	//************** read infos from GCodeFile ahead ****************
@@ -133,6 +134,10 @@ void GCodeParser::Execute(){
 		ypos = line_string.find("Y");
 		zpos = line_string.find("Z");
 		feedratepos = line_string.find(feedratemask);
+		if (this->slmcompat) {
+			beamexpanderpos = line_string.find(BEDmask);
+			powerpos = line_string.find(powermask);
+		}
 		//********************************************************************
 
 		//*************** check if line is only a travelmove *****************
@@ -180,17 +185,30 @@ void GCodeParser::Execute(){
 				size_t endfeedratepos = line_string.substr(feedratepos + 1, line_string.length()).find_first_not_of(coordchars); //length of feedrate
 				origin[7] = stof(line_string.substr(feedratepos + 1, endfeedratepos));
 			}
+			if (this->slmcompat && feedratepos != std::string::npos) { //found feedrate -- SLM
+				size_t endfeedratepos = line_string.substr(feedratepos + 2, line_string.length()).find_first_not_of(coordchars); //length of feedrate
+				origin[7] = stof(line_string.substr(feedratepos + 2, endfeedratepos));
+			}
+			if (this->slmcompat && beamexpanderpos != std::string::npos) { //found beam expander value
+				size_t endbeamexpanderpos = line_string.substr(beamexpanderpos + 5, line_string.length()).find_first_not_of(coordchars); //length of beam expander value
+				origin[8] = stof(line_string.substr(beamexpanderpos + 5, endbeamexpanderpos));
+			}
+			if (this->slmcompat && powerpos != std::string::npos) { //found laser power value
+				size_t endpowerpos = line_string.substr(powerpos + 5, line_string.length()).find_first_not_of(coordchars); //length of laser power value
+				origin[9] = stof(line_string.substr(powerpos + 5, endpowerpos));
+			}
 		}
 		//********** start of object detection *******************************
 		// check which start detection method has been set: 
 		if (firstlines && !startbystring) {
 			// this is the "offsetfromskirt" technique; techniques have to switch off the bool firstlines and care to push_back an origin
 			// boundariesbyskirtoffset(bool &firstlines, const size_t &travelcount, const size_t &skirtoffset, const std::array &origin)
-			if ( travelcount == (this->skirtnum + this->skirtoffset) ) {
+			if (travelcount == (this->skirtnum + this->skirtoffset)) {
 				//set traveldestination as start coordinates
 				std::cout << "pushed back origin [startbyskirtoffset]: " << origin[0] << " " << origin[1] << " " << origin[2] << std::endl;
 				this->PrintVector.push_back({ origin }); //"origin" contains starts coords + start feedrate
 				firstlines = false;
+				feedrate = origin[7]; beamexpandervalue = origin[8]; laserpowervalue = origin[9];
 				continue;
 			}
 			else {
@@ -203,6 +221,7 @@ void GCodeParser::Execute(){
 				std::cout << "pushed back origin [startbystring]: " << origin[0] << " " << origin[1] << " " << origin[2] << std::endl;
 				this->PrintVector.push_back({ origin }); //"origin"
 				firstlines = false;
+				feedrate = origin[7]; beamexpandervalue = origin[8]; laserpowervalue = origin[9];
 				continue;
 			}
 			else {
@@ -217,15 +236,26 @@ void GCodeParser::Execute(){
 			break;
 		}
 		//********************************************************************
-		//********* update feedrate from commands without printing ***********
+
+		//********* update feedrate/BED from commands without printing ***********
 		if ( (line_string.substr(0, drive.length()) == drive || line_string.substr(0, drivetrav.length()) == drivetrav) && (commentpos >= feedratepos) && (feedratepos != std::string::npos) ) {
 			size_t endfeedratepos = line_string.substr(feedratepos + 1, line_string.length()).find_first_not_of(coordchars); //length of feedrate
 			feedrate = stof(line_string.substr(feedratepos + 1, endfeedratepos));
 		}
-		// method to use with orlas slm compatibility, if above will always evaluate to false
+		// SLM - feed: method to use with orlas slm compatibility, if above will always evaluate to false
 		if (this->slmcompat && (commentpos >= feedratepos) && (feedratepos != std::string::npos)) {
 			size_t endfeedratepos = line_string.substr(feedratepos + 2, line_string.length()).find_first_not_of(coordchars); //length of feedrate
 			feedrate = stof(line_string.substr(feedratepos + 2, endfeedratepos));
+		}
+		// SLM - BED: method to use with orlas slm compatibility, if above will always evaluate to false
+		if (this->slmcompat && (commentpos >= beamexpanderpos) && (beamexpanderpos != std::string::npos)) {
+			size_t endbeamexpanderpos = line_string.substr(beamexpanderpos + 5, line_string.length()).find_first_not_of(coordchars); //length of BED
+			beamexpandervalue = stof(line_string.substr(beamexpanderpos + 5, endbeamexpanderpos));
+		}
+		// SLM - laser power: method to use with orlas slm compatibility, if above will always evaluate to false
+		if (this->slmcompat && (commentpos >= powerpos) && (powerpos != std::string::npos)) {
+			size_t endpowerpos = line_string.substr(powerpos + 5, line_string.length()).find_first_not_of(coordchars); //length of BED
+			laserpowervalue = stof(line_string.substr(powerpos + 5, endpowerpos));
 		}
 		//********************************************************************
 		// helper position for slmcompat mode
@@ -262,22 +292,30 @@ void GCodeParser::Execute(){
 			if (isatravel) { // isatravel so start new vec and and push back the travel end coords
 				//if ((abs(xcoord - PrintVector.back().back()[0]) < tol) && (abs(ycoord - PrintVector.back().back()[1]) < tol) && (abs(zcoord - PrintVector.back().back()[2]) < tol)) { // coordinates need to differ from last coords, else just skip	
 				if ( arefloatsequal(xcoord, this->PrintVector.back().back()[0]) && arefloatsequal(ycoord, this->PrintVector.back().back()[1]) && arefloatsequal(zcoord, this->PrintVector.back().back()[2]) ) {
-			}
+					// do nothing when coords are not changing from last one
+				}
+				else if (startednewchunk) {
+					this->PrintVector.back().back() = { xcoord,ycoord,zcoord,0,0,0,0, feedrate, beamexpandervalue, laserpowervalue } ;
+				}
 				else { // if printer has just travelled, this point will show wrong movement speed from travel move this->PrintVector.back().back()[7]
-					this->PrintVector.push_back({ { xcoord,ycoord,zcoord,0,0,0,0, feedrate } });
+					this->PrintVector.push_back({{ xcoord,ycoord,zcoord,0,0,0,0, feedrate, beamexpandervalue, laserpowervalue } });
+					startednewchunk = true;
 				}
 				//linenum = 1; // reset linenum with starting a new Vector
 			}
 			else {
-				if (arefloatsequal(xcoord, this->PrintVector.back().back()[0]) && arefloatsequal(ycoord, this->PrintVector.back().back()[1]) && arefloatsequal(zcoord, this->PrintVector.back().back()[2])) { // coordinates need to differ from last coords, else just skip	
+				startednewchunk = false;
+				if (arefloatsequal(xcoord, this->PrintVector.back().back()[0]) && arefloatsequal(ycoord, this->PrintVector.back().back()[1]) && arefloatsequal(zcoord, this->PrintVector.back().back()[2])) { 
+					// coordinates need to differ from last coords, else just skip	
 				}
 				else {
-					this->PrintVector.back().push_back({ xcoord,ycoord,zcoord,0,0,0,0,feedrate });
+					this->PrintVector.back().push_back({ xcoord,ycoord,zcoord,0,0,0,0,feedrate, beamexpandervalue, laserpowervalue });
 				}
 				
 				//++linenum; //added entry in this path
 			}
 		}
+
 	}
 
 	GCodeFile.close();
@@ -288,28 +326,33 @@ void GCodeParser::Execute(){
 			dx = pathitem[i + 1][0] - pathitem[i][0];
 			dy = pathitem[i + 1][1] - pathitem[i][1];
 			dz = pathitem[i + 1][2] - pathitem[i][2];
-			//if ((dx == 0.0 && dy == 0.0 && dz == 0.0) && (i != 0) ) { // superfluous coord definition in GCode file
-			//	dx = pathitem[i-1][3]; dy = pathitem[i-1][4]; dz = pathitem[i-1][5]; disttonext = pathitem[i-1][6];
-			//}
+			
 			disttonext = sqrt(dx * dx + dy * dy + dz * dz);
 			dx = dx / disttonext; dy = dy / disttonext; dz = dz / disttonext; //norm direction
 			pathitem[i][3] = dx; pathitem[i][4] = dy; pathitem[i][5] = dz; pathitem[i][6] = disttonext;
 			// calulate printpathlength
 			this->printpathlength += disttonext;
-			// prints out extracted object printing coords
-			//std::cout << " -- X: " << pathitem[i][0] << " -- Y: " << pathitem[i][1] << " -- Z: " << pathitem[i][2] << " -- disttonext " << pathitem[i][6] << std::endl;
 		}
 	}
-	for (std::size_t i = 0; i < this->PrintVector.size() - 1; ++i) { // update last elements
-		dx = this->PrintVector[i + 1][0][0] - this->PrintVector[i].back()[0];
+	for (std::size_t i = 0; i < this->PrintVector.size(); ++i) { // update last elements
+		/*dx = this->PrintVector[i + 1][0][0] - this->PrintVector[i].back()[0];
 		dy = this->PrintVector[i + 1][0][1] - this->PrintVector[i].back()[1];
-		dz = this->PrintVector[i + 1][0][2] - this->PrintVector[i].back()[2];
+		dz = this->PrintVector[i + 1][0][2] - this->PrintVector[i].back()[2];*/
 		//if ((dx == 0.0 && dy == 0.0 && dz == 0.0) && (i != 0)) { // superfluous coord definition in GCode file
 		//	dx = this->PrintVector[i-1].back()[3]; dy = this->PrintVector[i - 1].back()[4]; dz = this->PrintVector[i - 1].back()[5]; disttonext = this->PrintVector[i - 1].back()[6];
 		//}
-		disttonext = sqrt(dx * dx + dy * dy + dz * dz);
-		dx = dx / disttonext; dy = dy / disttonext; dz = dz / disttonext; //norm direction
-		this->PrintVector[i].back()[3] = dx; this->PrintVector[i].back()[4] = dy; this->PrintVector[i].back()[5] = dz; this->PrintVector[i].back()[6] = disttonext;
+		if (this->PrintVector[i].size() >= 2) {
+			dx = this->PrintVector[i][this->PrintVector[i].size() - 2][3];
+			dy = this->PrintVector[i][this->PrintVector[i].size() - 2][4]; //caution with double travels !!!!!!
+			dz = this->PrintVector[i][this->PrintVector[i].size() - 2][5];
+		}
+		else { // take last direction of -1 -1 -1 as fallback ----> Todo!
+			dx = -1;
+			dy = -1; 
+			dz = -1;
+		}
+		// disttonext is 0 by definition
+		this->PrintVector[i].back()[3] = dx; this->PrintVector[i].back()[4] = dy; this->PrintVector[i].back()[5] = dz; this->PrintVector[i].back()[6] = 0;
 	}	
 }
 
