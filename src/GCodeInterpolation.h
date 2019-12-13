@@ -36,12 +36,7 @@ private:
 	// vars to store settings
 	float distance = -1.f;
 
-	float carry_distance = -1.f; // will store carry from last generated coord to next coord in PrintVector
-
 	// this function generates values interpolated with const distance in normalised vector
-	void interpolatepath(ChunkVector::const_iterator &CCoordIt, const PathVector::const_iterator &CChunkIt, const float &searchdistance);
-	
-	// this function accumulates carry until distance is big enough, if points are too close
-	void skipcoords(const ChunkVector::const_iterator &CCoordIt, const PathVector::const_iterator &CChunkIt);
+	void interpolatepath(ChunkVector::const_iterator &CCoordIt, const PathVector::const_iterator &CChunkIt);
 
 };

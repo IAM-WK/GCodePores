@@ -67,6 +67,7 @@ private:
 	
 	std::string vtkfilename;
 
+
 	// helper to sort index / coord pairs (used for perim no classification)
 	static bool paircomparator(const std::pair<float, size_t> &l, const std::pair<float, size_t> &r) noexcept;
 

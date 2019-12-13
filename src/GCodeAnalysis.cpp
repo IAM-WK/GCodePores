@@ -207,6 +207,7 @@ void GCodeAnalysis::classifypoints(const PathBase::PathVector & PathVec, const f
 				++point_index;
 			}
 			//this->pathclassificationwithchunks.push_back(this->pathclassification[point_index-1]);
+			//this->pathclassificationwithchunks[layered_chunks[layernum][chunknum].second] = this->pathclassification[point_index - 1];
 			if (this->pathclassification[(point_index - 1)] != 0) {
 				this->pathclassificationwithchunks[layered_chunks[layernum][chunknum].second] = perim_number;
 			}
@@ -282,16 +283,17 @@ void GCodeAnalysis::calchatchdistance(const PathBase::PathVector& PathVec)
 	// check if olddirection == currentdirection, else set distancetolast to -1 + continue
 
 	// TODO: output warning: only seperated hatching is supported!
+	// check for numerical stability
 	if (this->pathclassificationwithchunks.size() == 0) {
 		std::cerr << "Print paths have to be classified before calculating hatch distance!" << std::endl;
 	}
-	std::array<double, 3> currentdirection = { 0.f,0.f,0.f }, olddirection = { 0.f,0.f,0.f }, pointonlastline = { 0.f,0.f,0.f }, pointoncurrentline = { 0.f,0.f,0.f }, vectorarea = { 0.f,0.f,0.f };
+	std::array<double, 3> currentdirection = { 0.f,0.f,0.f }, olddirection = { 0.f,0.f,0.f }, pointonlastline_a = { 0.f,0.f,0.f }, pointoncurrentline_a = { 0.f,0.f,0.f }, vectorarea = { 0.f,0.f,0.f };
 	double lengthofdirectionvec = 0;
 
 	for (size_t i = 0; i < PathVec.size(); ++i) {
 		currentdirection = { 0.f,0.f,0.f };
 		vectorarea = { 0.f,0.f,0.f };
-		pointoncurrentline = { PathVec[i][0][0],PathVec[i][0][1],PathVec[i][0][2] };
+		pointoncurrentline_a = { PathVec[i][0][0],PathVec[i][0][1],PathVec[i][0][2] };
 		for (size_t j = 0; j < PathVec[i].size(); ++j) {
 			currentdirection[0] += PathVec[i][j][3];
 			currentdirection[1] += PathVec[i][j][4];
@@ -316,32 +318,33 @@ void GCodeAnalysis::calchatchdistance(const PathBase::PathVector& PathVec)
 		}
 		else if (i == 0) {
 			olddirection = currentdirection;
-			pointonlastline = pointoncurrentline;
+			pointonlastline_a = pointoncurrentline_a;
 			hatchdistance.push_back(-1.f);
 			continue;
 		}
-		// is point on line?
-		else if (arefloatsequal(static_cast<float>((pointonlastline[0] - pointoncurrentline[0]) / olddirection[0]), static_cast<float>((pointonlastline[1] - pointoncurrentline[1]) / olddirection[1]), directionaltolerance) && arefloatsequal(static_cast<float>((pointonlastline[0] - pointoncurrentline[0]) / olddirection[0]), static_cast<float>((pointonlastline[2] - pointoncurrentline[2]) / olddirection[2]), directionaltolerance)) {
+		// is point on line? not necessary: && arefloatsequal(static_cast<float>((pointonlastline[2] - pointoncurrentline[2]) / (pointonlastline[0] - pointoncurrentline[0])), static_cast<float>(olddirection[2] / olddirection[0]), directionaltolerance)
+		else if (arefloatsequal(static_cast<float>((pointonlastline_a[1] - pointoncurrentline_a[1]) / (pointonlastline_a[0] - pointoncurrentline_a[0])), static_cast<float>(olddirection[1] / olddirection[0]), directionaltolerance) ) {
 			// -10 is code for: use dist of last line
-			std::cout << "hdufh" << std::endl;
 			hatchdistance.push_back(-10.f);
 			continue;
 		}
 		else if (!arefloatsequal(static_cast<float>(olddirection[0]), static_cast<float>(currentdirection[0]), directionaltolerance) && !arefloatsequal(static_cast<float>(olddirection[1]), static_cast<float>(currentdirection[1]), directionaltolerance) && !arefloatsequal(static_cast<float>(olddirection[2]), static_cast<float>(currentdirection[2]), directionaltolerance)) {
 		// non parallel lines detected!
 			olddirection = currentdirection;
-			pointonlastline = pointoncurrentline;
+			pointonlastline_a = pointoncurrentline_a;
 			hatchdistance.push_back(-30.f);
 			continue;
 		}
 		else {
-			vectorarea = crossproduct(currentdirection, { pointoncurrentline[0] - pointonlastline[0], pointoncurrentline[1] - pointonlastline[1], pointoncurrentline[2] - pointonlastline[2] });
+			vectorarea = crossproduct(currentdirection, { pointoncurrentline_a[0] - pointonlastline_a[0], pointoncurrentline_a[1] - pointonlastline_a[1], pointoncurrentline_a[2] - pointonlastline_a[2] });
 			hatchdistance.push_back(static_cast<float>(sqrt(vectorarea[0] * vectorarea[0] + vectorarea[1] * vectorarea[1] + vectorarea[2] * vectorarea[2])));
+			//area = (abs((pointonlastline_a[0] * pointonlastline_b[1] - pointonlastline_b[0] * pointonlastline_a[1]) - (pointoncurrentline_a[0] * pointoncurrentline_b[1] - pointoncurrentline_b[0] * pointoncurrentline_a[1])) / sqrt((currentdirection[1]* currentdirection[1]) + (currentdirection[0] * currentdirection[0])));
+			//hatchdistance.push_back(static_cast<float>(area));
 		}
 		
 		// set old direction and point on this line
 		olddirection = currentdirection;
-		pointonlastline = pointoncurrentline;
+		pointonlastline_a = pointoncurrentline_a;
 	}
 
 	for (size_t i = PathVec.size(); i >= 1; --i) {

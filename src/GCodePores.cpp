@@ -235,7 +235,7 @@ int main(int argc, char *argv[])
 	//GCodeAnalyser.calcdeltaangle(pathVec, true, true, 0.4f); // calc angles at points and create vtk colorfield, degree, filter, filterlength
 	float extr_width = 0.f, l_hgt = 0.f;
 	PathParser.getGCodeparams(extr_width, l_hgt);
-	if (slmcompat) { extr_width = 0.25f; } //todo: estimate from GCode
+	if (slmcompat) { extr_width = 0.15f; } //todo: estimate from GCode
 	else if (arefloatsequal(extr_width, 0.f)) { extr_width = 0.45f; };
 	GCodeAnalyser.classifypoints(pathVec, 0.5f*extr_width); // maybe a bit too conservative to use width as tolerance...
 	GCodeAnalyser.calcpathlength(pathVec);
