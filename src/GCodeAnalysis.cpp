@@ -289,6 +289,7 @@ void GCodeAnalysis::calchatchdistance(const PathBase::PathVector& PathVec)
 	}
 	std::array<double, 3> currentdirection = { 0.f,0.f,0.f }, olddirection = { 0.f,0.f,0.f }, pointonlastline_a = { 0.f,0.f,0.f }, pointoncurrentline_a = { 0.f,0.f,0.f }, vectorarea = { 0.f,0.f,0.f };
 	double lengthofdirectionvec = 0;
+	bool lastchunkwasaperim = false;
 
 	for (size_t i = 0; i < PathVec.size(); ++i) {
 		currentdirection = { 0.f,0.f,0.f };
@@ -314,6 +315,7 @@ void GCodeAnalysis::calchatchdistance(const PathBase::PathVector& PathVec)
 		if (this->pathclassificationwithchunks.at(i) != 0) { 
 			// -20 = contour path
 			hatchdistance.push_back(static_cast<float>(this->pathclassificationwithchunks.at(i)));
+			lastchunkwasaperim = true;
 			continue;
 		}
 		else if (i == 0) {
@@ -326,6 +328,7 @@ void GCodeAnalysis::calchatchdistance(const PathBase::PathVector& PathVec)
 		else if (arefloatsequal(static_cast<float>((pointonlastline_a[1] - pointoncurrentline_a[1]) / (pointonlastline_a[0] - pointoncurrentline_a[0])), static_cast<float>(olddirection[1] / olddirection[0]), directionaltolerance) ) {
 			// -10 is code for: use dist of last line
 			hatchdistance.push_back(-10.f);
+			lastchunkwasaperim = false;
 			continue;
 		}
 		else if (!arefloatsequal(static_cast<float>(olddirection[0]), static_cast<float>(currentdirection[0]), directionaltolerance) && !arefloatsequal(static_cast<float>(olddirection[1]), static_cast<float>(currentdirection[1]), directionaltolerance) && !arefloatsequal(static_cast<float>(olddirection[2]), static_cast<float>(currentdirection[2]), directionaltolerance)) {
@@ -333,11 +336,20 @@ void GCodeAnalysis::calchatchdistance(const PathBase::PathVector& PathVec)
 			olddirection = currentdirection;
 			pointonlastline_a = pointoncurrentline_a;
 			hatchdistance.push_back(-30.f);
+			lastchunkwasaperim = false;
+			continue;
+		}
+		else if (lastchunkwasaperim && this->pathclassificationwithchunks.at(i) == 0) { // measured distance after permieter is pointless
+			olddirection = currentdirection;
+			pointonlastline_a = pointoncurrentline_a;
+			hatchdistance.push_back(-40.f);
+			lastchunkwasaperim = false;
 			continue;
 		}
 		else {
 			vectorarea = crossproduct(currentdirection, { pointoncurrentline_a[0] - pointonlastline_a[0], pointoncurrentline_a[1] - pointonlastline_a[1], pointoncurrentline_a[2] - pointonlastline_a[2] });
 			hatchdistance.push_back(static_cast<float>(sqrt(vectorarea[0] * vectorarea[0] + vectorarea[1] * vectorarea[1] + vectorarea[2] * vectorarea[2])));
+			lastchunkwasaperim = false;
 			//area = (abs((pointonlastline_a[0] * pointonlastline_b[1] - pointonlastline_b[0] * pointonlastline_a[1]) - (pointoncurrentline_a[0] * pointoncurrentline_b[1] - pointoncurrentline_b[0] * pointoncurrentline_a[1])) / sqrt((currentdirection[1]* currentdirection[1]) + (currentdirection[0] * currentdirection[0])));
 			//hatchdistance.push_back(static_cast<float>(area));
 		}
@@ -352,7 +364,10 @@ void GCodeAnalysis::calchatchdistance(const PathBase::PathVector& PathVec)
 		if (arefloatsequal(hatchdistance[i - 1], -10.f) && hatchdistance.size() != 1) {
 			hatchdistance[i - 1] = hatchdistance[i];
 		}
-		// store distancevalue of chunk to every point in PathVec
+		if (hatchdistance.size() > 2 && arefloatsequal(hatchdistance[i - 2], -40.f)) {
+			hatchdistance[i - 2] = hatchdistance[i - 1];
+		}
+			// store distancevalue of chunk to every point in PathVec
 		for (size_t j = PathVec[i - 1].size(); j >= 1; --j) {
 			if (!slmcompat) {
 				hatchdistance_points.push_back(0.f);
@@ -363,6 +378,7 @@ void GCodeAnalysis::calchatchdistance(const PathBase::PathVector& PathVec)
 		}
 	}
 	std::reverse(hatchdistance_points.begin(), hatchdistance_points.end());
+
 }
 
 void GCodeAnalysis::setlayerheighttol(const float &layer_height_tol_val) noexcept

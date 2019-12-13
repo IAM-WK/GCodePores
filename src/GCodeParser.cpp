@@ -37,34 +37,36 @@ void GCodeParser::readinfos(std::ifstream &GCodeFile, std::string &line_string, 
 	
 	while (getline(GCodeFile, line_string))
 	{
-		if ( line_string.substr(0, 8) == "; skirts" || line_string.substr(0, 17) == ";   skirtOutlines") { // implement this variable where to search in line
+		if (!slmcompat) {
+			if (line_string.substr(0, 8) == "; skirts" || line_string.substr(0, 17) == ";   skirtOutlines") { // implement this variable where to search in line
 			// could also search for various information here until everything needed is found or end is reached
 			// then readinfo = false --> proceed to level 2 scan
-			size_t skirtpos = line_string.find("= "); //position of skirt numbers in line_string
-			if (skirtpos == std::string::npos) {
-				skirtpos = line_string.find(",");
+				size_t skirtpos = line_string.find("= "); //position of skirt numbers in line_string
+				if (skirtpos == std::string::npos) {
+					skirtpos = line_string.find(",");
+				}
+				size_t endskirtpos = line_string.substr(skirtpos + 2, line_string.length()).find_first_not_of(coordchars);
+				this->skirtnum = stoi(line_string.substr(skirtpos + 1, endskirtpos));
 			}
-			size_t endskirtpos = line_string.substr(skirtpos + 2, line_string.length()).find_first_not_of(coordchars);
-			this->skirtnum = stoi(line_string.substr(skirtpos + 1, endskirtpos));
-		}
-		if (line_string.substr(0, 17) == "; extrusion_width" || line_string.substr(0, 17) == ";   extruderWidth") { // implement this variable where to search in line
-			// determine extrusion width -> horizontal diameter = ex_w * pixel_width
-			size_t exwpos = line_string.find("= ");
-			if (exwpos == std::string::npos) {
-				exwpos = line_string.find(",");
+			if (line_string.substr(0, 17) == "; extrusion_width" || line_string.substr(0, 17) == ";   extruderWidth") { // implement this variable where to search in line
+				// determine extrusion width -> horizontal diameter = ex_w * pixel_width
+				size_t exwpos = line_string.find("= ");
+				if (exwpos == std::string::npos) {
+					exwpos = line_string.find(",");
+				}
+				size_t endexwpos = line_string.substr(exwpos + 2, line_string.length()).find_first_not_of(coordchars);
+				this->extrusion_width = stof(line_string.substr(exwpos + 1, endexwpos));
 			}
-			size_t endexwpos = line_string.substr(exwpos + 2, line_string.length()).find_first_not_of(coordchars);
-			this->extrusion_width = stof(line_string.substr(exwpos + 1, endexwpos));
-		}
-		if (line_string.substr(0, 14) == "; layer_height" || line_string.substr(0, 15) == ";   layerHeight") { // implement this variable where to search in line
-			// determine layer height -> vertical diameter = lay_h * pixel_height
-			size_t layheightpos = line_string.find("= ");
-			if (layheightpos == std::string::npos) {
-				layheightpos = line_string.find(",");
+			if (line_string.substr(0, 14) == "; layer_height" || line_string.substr(0, 15) == ";   layerHeight") { // implement this variable where to search in line
+				// determine layer height -> vertical diameter = lay_h * pixel_height
+				size_t layheightpos = line_string.find("= ");
+				if (layheightpos == std::string::npos) {
+					layheightpos = line_string.find(",");
+				}
+				size_t endlayheightpos = line_string.substr(layheightpos + 2, line_string.length()).find_first_not_of(coordchars);
+				this->layer_height = stof(line_string.substr(layheightpos + 1, endlayheightpos));
 			}
-			size_t endlayheightpos = line_string.substr(layheightpos + 2, line_string.length()).find_first_not_of(coordchars);
-			this->layer_height = stof(line_string.substr(layheightpos + 1, endlayheightpos));
-		}
+		} // infos only implemented for FDM		
 		++this->numoflines; // count number of lines
 	}
 	GCodeFile.clear(); // clear EOF flag
