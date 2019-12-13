@@ -353,7 +353,7 @@ void GCodeAnalysis::calchatchdistance(const PathBase::PathVector& PathVec)
 			hatchdistance[i - 1] = hatchdistance[i];
 		}
 		// store distancevalue of chunk to every point in PathVec
-		for (size_t j = 0; j < PathVec[i - 1].size(); ++j) {
+		for (size_t j = PathVec[i - 1].size(); j >= 1; --j) {
 			if (!slmcompat) {
 				hatchdistance_points.push_back(0.f);
 			}
@@ -362,7 +362,7 @@ void GCodeAnalysis::calchatchdistance(const PathBase::PathVector& PathVec)
 			}
 		}
 	}
-
+	std::reverse(hatchdistance_points.begin(), hatchdistance_points.end());
 }
 
 void GCodeAnalysis::setlayerheighttol(const float &layer_height_tol_val) noexcept
