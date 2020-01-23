@@ -34,21 +34,21 @@ Rationale:
 Step 1: registering the GCode to your µCT Scan:
 
 Execute GCodePores with parameters like: 
-GCodePores.exe -i image.mhd -g sampleobject.gcode --interpolationoff --vtkfileonly -a 0 -u "0 0 0" -k 1 -p MorphoLibJoutput.csv 
+GCodePores.exe -i image.mhd -g sampleobject.gcode --interpolationoff --vtkfileonly -a 0 -u "0 0 0" -k 1 -p MorphoLibJoutput.csv \
 (-k and -p are needed for the program to run but in this step irrelevant)
 
-Open the image.mhd in Paraview. The program will generate a coordinatefile.vtk which can be opened alongside in Paraview. Now register the coordinatefile with Paraview (Transforming->Translation and Transforming->Rotation) until the path matches onto the image.
+Open the image.mhd in Paraview. The program will generate a coordinatefile.vtk which can be opened alongside in Paraview. Now register the coordinatefile with Paraview (Transforming->Translation and Transforming->Rotation) until the path matches onto the image.\
 Please only use rotation around z-axis! If other rotations are needed for registration, register the image until at least rotations in x- and y-axis aren't needed, save the image in this orientation and do the MorphoLibJ analysis on this registered Image!
 
-Execute GCodePores again with the obtained Translation under -u and z-axis rotation under -a, for example: 
-GCodePores.exe -i image.mhd -g sampleobject.gcode --interpolationoff --vtkfileonly -a 1.2423 -u "3.2 4.2 1.2" -k 1 -p MorphoLibJoutput.csv 
+Execute GCodePores again with the obtained Translation under -u and z-axis rotation under -a, for example: \
+GCodePores.exe -i image.mhd -g sampleobject.gcode --interpolationoff --vtkfileonly -a 1.2423 -u "3.2 4.2 1.2" -k 1 -p MorphoLibJoutput.csv \
 Check again in Paraview if the registration result with the new coordinatefile.vtk is good.
 
 ---
 
-Step 2: starting an analysis
-Execute GCodePores with parameters like: 
-GCodePores.exe -i image.mhd -g sampleobject.gcode -d 0.1 -a 1.2423 -u "3.2 4.2 1.2" -k 3 -p MorphoLibJoutput.csv -j 7  -o AnalysisResults.csv
+Step 2: starting an analysis \
+Execute GCodePores with parameters like: \
+GCodePores.exe -i image.mhd -g sampleobject.gcode -d 0.1 -a 1.2423 -u "3.2 4.2 1.2" -k 3 -p MorphoLibJoutput.csv -j 7  -o AnalysisResults.csv\
 Check GCodePores.exe --help for additional options and descriptions.
 The Analysis results can be found in AnalysisResults.csv
 
