@@ -1,13 +1,13 @@
 # GCodePores
 
 A tool to process GCode from various 3D printers and correlate information about pores obtained from µCT images.
-
+- - - -
 ## Supported GCode Flavours
 * Cura
 * Orlas Suite
 * Arburg Freeformer
 
-
+- - - -
 
 ## Getting Started
 Prerequisites:
@@ -20,6 +20,7 @@ Prerequisites:
   <img src="https://github.com/IAM-WK/GCodePores/blob/master/doc/GCodePores_ProgramFlow.png" width="350" title="Flowchart">
 </p>
 
+- - - -
 
 ### Preprocessing µCT Images
 Rationale:
@@ -29,7 +30,7 @@ Rationale:
 4. save pore list to a file
 
 ### Analysing Data with GCodePores
-
+---
 Step 1: registering the GCode to your µCT Scan:
 
 Execute GCodePores with parameters like: 
@@ -43,6 +44,8 @@ Execute GCodePores again with the obtained Translation under -u and z-axis rotat
 GCodePores.exe -i image.mhd -g sampleobject.gcode --interpolationoff --vtkfileonly -a 1.2423 -u "3.2 4.2 1.2" -k 1 -p MorphoLibJoutput.csv 
 Check again in Paraview if the registration result with the new coordinatefile.vtk is good.
 
+---
+
 Step 2: starting an analysis
 Execute GCodePores with parameters like: 
 GCodePores.exe -i image.mhd -g sampleobject.gcode -d 0.1 -a 1.2423 -u "3.2 4.2 1.2" -k 3 -p MorphoLibJoutput.csv -j 7  -o AnalysisResults.csv
@@ -51,9 +54,8 @@ The Analysis results can be found in AnalysisResults.csv
 
 ### Troubleshooting
 
----
 Help is available through GCodePores.exe -h or --help
----
+
 
 ### Dependencies 
 
