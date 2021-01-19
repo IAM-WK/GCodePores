@@ -1,6 +1,9 @@
 # GCodePores
 
 A tool to process GCode from various 3D printers and correlate information about pores obtained from µCT images.
+Further development is continued under https://sourceforge.net/p/ctfam/wiki/GCodePoreCorrelation/.
+Various related tools will be availabe under https://sourceforge.net/p/ctfam/
+
 - - - -
 ## Supported GCode Flavours
 * Cura
