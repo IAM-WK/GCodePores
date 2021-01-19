@@ -4,6 +4,10 @@ A tool to process GCode from various 3D printers and correlate information about
 Further development is continued under https://sourceforge.net/p/ctfam/wiki/GCodePoreCorrelation/.
 Various related tools will be availabe under https://sourceforge.net/p/ctfam/
 
+## Cite
+If you intend to use this work for a publication, please cite
+https://doi.org/10.1108/RPJ-07-2019-0200
+
 - - - -
 ## Supported GCode Flavours
 * Cura
